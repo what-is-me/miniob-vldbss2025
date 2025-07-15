@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/explain_logical_operator.h"
 #include "sql/operator/insert_logical_operator.h"
 #include "sql/operator/join_logical_operator.h"
+#include "sql/operator/limit_logical_operator.h"
 #include "sql/operator/logical_operator.h"
 #include "sql/operator/order_by_logical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
@@ -39,6 +40,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/stmt.h"
 
 #include "sql/expr/expression_iterator.h"
+#include <climits>
 #include <functional>
 #include <memory>
 
@@ -107,7 +109,6 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
 
   const vector<Table *> &tables = select_stmt->tables();
   for (Table *table : tables) {
-
     unique_ptr<LogicalOperator> table_get_oper(new TableGetLogicalOperator(table, ReadWriteMode::READ_ONLY));
     if (table_oper == nullptr) {
       table_oper = std::move(table_get_oper);
@@ -127,21 +128,17 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
     last_oper = &predicate_oper;
   }
 
-  {
-    unique_ptr<LogicalOperator> group_by_oper;
-    rc = create_group_by_plan(select_stmt, group_by_oper);
-    if (OB_FAIL(rc)) {
-      LOG_WARN("failed to create group by logical plan. rc=%s", strrc(rc));
-      return rc;
+  unique_ptr<LogicalOperator> group_by_oper;
+  rc = create_group_by_plan(select_stmt, group_by_oper);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create group by logical plan. rc=%s", strrc(rc));
+    return rc;
+  }
+  if (group_by_oper) {
+    if (*last_oper) {
+      group_by_oper->add_child(std::move(*last_oper));
     }
-
-    if (group_by_oper) {
-      if (*last_oper) {
-        group_by_oper->add_child(std::move(*last_oper));
-      }
-
-      last_oper = &group_by_oper;
-    }
+    last_oper = &group_by_oper;
   }
 
   unique_ptr<LogicalOperator> project_oper =
@@ -149,29 +146,30 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   if (*last_oper) {
     project_oper->add_child(std::move(*last_oper));
   }
-
   last_oper = &project_oper;
 
-  {
-    unique_ptr<LogicalOperator> order_by_oper;
-    rc = create_order_by_plan(select_stmt, order_by_oper);
-    if (OB_FAIL(rc)) {
-      LOG_WARN("failed to create order by logical plan. rc=%s", strrc(rc));
-      return rc;
-    }
-
-    if (order_by_oper) {
-      if (*last_oper) {
-        order_by_oper->add_child(std::move(*last_oper));
-      }
-
-      last_oper = &order_by_oper;
-    }
+  unique_ptr<LogicalOperator> order_by_oper;
+  rc = create_order_by_plan(select_stmt, order_by_oper);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create order by logical plan. rc=%s", strrc(rc));
+    return rc;
   }
-  {
-
-    // TODO: LIMIT
+  if (order_by_oper) {
+    if (*last_oper) {
+      order_by_oper->add_child(std::move(*last_oper));
+    }
+    last_oper = &order_by_oper;
   }
+
+  unique_ptr<LogicalOperator> limit_oper = nullptr;
+  if (select_stmt->limit() != INT_MAX) {
+    limit_oper = make_unique<LimitLogicalOperator>(select_stmt->limit());
+    if (*last_oper) {
+      limit_oper->add_child(std::move(*last_oper));
+    }
+    last_oper = &limit_oper;
+  }
+
   logical_operator = std::move(*last_oper);
   return RC::SUCCESS;
 }

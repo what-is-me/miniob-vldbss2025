@@ -1,6 +1,5 @@
 #pragma once
 #include "sql/operator/logical_operator.h"
-#include "sql/operator/operator_node.h"
 class LimitLogicalOperator : public LogicalOperator
 {
 public:
