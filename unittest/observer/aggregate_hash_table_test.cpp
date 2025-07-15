@@ -104,7 +104,7 @@ TEST(AggregateHashTableTest, DISABLED_standard_hash_table)
 }
 
 #ifdef USE_SIMD
-TEST(AggregateHashTableTest, DISABLED_linear_probing_hash_table)
+TEST(AggregateHashTableTest, linear_probing_hash_table)
 {
   // simple case
   {
