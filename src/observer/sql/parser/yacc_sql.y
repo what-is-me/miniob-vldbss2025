@@ -68,6 +68,9 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         CREATE
         DROP
         GROUP
+        ORDER
+        ASC
+        LIMIT
         TABLE
         TABLES
         INDEX
@@ -129,6 +132,8 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
   AttrInfoSqlNode *                          attr_info;
   Expression *                               expression;
   vector<unique_ptr<Expression>> *           expression_list;
+  pair<vector<unique_ptr<Expression>>, vector<bool>> *order_by_list;
+  pair<Expression*, bool> *                  order_by_expr;
   vector<Value> *                            value_list;
   vector<ConditionSqlNode> *                 condition_list;
   vector<RelAttrSqlNode> *                   rel_attr_list;
@@ -166,6 +171,10 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <expression>          aggregate_expression
 %type <expression_list>     expression_list
 %type <expression_list>     group_by
+%type <order_by_expr>       order_by_expr
+%type <order_by_list>       order_by_list
+%type <order_by_list>       order_by
+%type <number>              limit       
 %type <cstring>             fields_terminated_by
 %type <cstring>             enclosed_by
 %type <sql_node>            calc_stmt
@@ -486,7 +495,7 @@ update_stmt:      /*  update 语句的语法解析树*/
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/
-    SELECT expression_list FROM rel_list where group_by
+    SELECT expression_list FROM rel_list where group_by order_by limit
     {
       $$ = new ParsedSqlNode(SCF_SELECT);
       if ($2 != nullptr) {
@@ -508,6 +517,13 @@ select_stmt:        /*  select 语句的语法解析树*/
         $$->selection.group_by.swap(*$6);
         delete $6;
       }
+
+      if ($7 != nullptr) {
+        $$->selection.order_by.swap(*$7);
+        delete $7;
+      }
+
+      $$->selection.limit = $8;
     }
     ;
 calc_stmt:
@@ -709,6 +725,60 @@ group_by:
       // group by 的表达式范围与select查询值的表达式范围是不同的，比如group by不支持 *
       // 但是这里没有处理。
       $$ = $3;
+    }
+    ;
+
+order_by:
+    /* empty */
+    {
+      $$ = nullptr;
+    }
+    | ORDER BY order_by_list
+    {
+      $$ = $3;
+    }
+    ;
+order_by_expr:
+    expression
+    {
+      $$ = new pair<Expression*, bool>($1, true);
+    }
+    | expression ASC
+    {
+      $$ = new pair<Expression*, bool>($1, true);
+    }
+    | expression DESC
+    {
+      $$ = new pair<Expression*, bool>($1, false);
+    }
+    ;
+order_by_list:
+    order_by_expr
+    {
+      $$ = new std::pair<vector<unique_ptr<Expression>>, vector<bool>>;
+      $$->first.emplace_back(std::move($1->first));
+      $$->second.emplace_back($1->second);
+      delete $1;
+    }
+    | order_by_list COMMA order_by_expr
+    {
+      $$ = $1;
+      if($$ == nullptr) {
+        $$ = new std::pair<vector<unique_ptr<Expression>>, vector<bool>>;
+      }
+      $$->first.emplace_back(std::move($3->first));
+      $$->second.emplace_back($3->second);
+      delete $3;
+    }
+    ;
+limit:
+    /* empty */
+    {
+      $$ = INT_MAX;
+    }
+    | LIMIT number
+    {
+      $$ = $2;
     }
     ;
 load_data_stmt:
