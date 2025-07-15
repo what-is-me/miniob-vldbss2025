@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/string.h"
 #include "common/lang/vector.h"
 #include "common/lang/memory.h"
+#include "common/type/attr_type.h"
 #include "common/value.h"
 #include "common/lang/utility.h"
 
@@ -337,3 +338,19 @@ public:
 private:
   vector<unique_ptr<ParsedSqlNode>> sql_nodes_;  ///< 这里记录SQL命令。虽然看起来支持多个，但是当前仅处理一个
 };
+
+
+inline int get_default_length(AttrType type) {
+  switch (type) {
+    case AttrType::CHARS: return 4;
+    case AttrType::BIGINTS: return 8;
+    case AttrType::DATES: return 4;
+    case AttrType::TEXTS: return 12;
+    case AttrType::INTS: return 4;
+    case AttrType::FLOATS: return 4;
+    case AttrType::VECTORS: return 4;
+    case AttrType::BOOLEANS: return 4;
+    default: 
+      throw std::runtime_error("get_default_length: unknown type");
+  }
+}

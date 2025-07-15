@@ -34,7 +34,7 @@ AttrType attr_type_from_string(const char *s)
 
 bool is_numerical_type(AttrType type)
 {
-  return (type == AttrType::INTS || type == AttrType::FLOATS);
+  return (type == AttrType::INTS || type == AttrType::FLOATS || type == AttrType::BIGINTS);
 }
 
 bool is_string_type(AttrType type)

@@ -10,6 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/lang/comparator.h"
 #include "common/log/log.h"
+#include "common/type/attr_type.h"
 #include "common/type/char_type.h"
 #include "common/value.h"
 
@@ -29,6 +30,27 @@ RC CharType::set_value_from_str(Value &val, const string &data) const
 RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
 {
   switch (type) {
+    case AttrType::DATES: {
+      // TODO:
+      const char *s = val.value_.pointer_value_;
+
+      int year, month, day;
+      // 使用 sscanf 解析日期字符串
+      if (sscanf(s, "%d-%d-%d", &year, &month, &day) == 3) {
+        result.value_.int_value_ = year * 10000 + month * 100 + day;
+      } else {
+        // 如果解析失败，设置为非法值（比如0，或你可以定义错误处理）
+        LOG_WARN("Invalid date string: %s", s);
+        throw std::invalid_argument("Invalid date string");
+        result.value_.int_value_ = 0;
+      }
+      break;
+    }
+    case AttrType::TEXTS: {
+      // TODO:
+      // result.set_string(val.data());
+      break;
+    }
     default: return RC::UNIMPLEMENTED;
   }
   return RC::SUCCESS;

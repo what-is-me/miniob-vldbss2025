@@ -18,7 +18,9 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/memory.h"
 #include "common/type/attr_type.h"
 #include "common/type/data_type.h"
+#include "common/type/date_type.h"
 #include "common/type/string_t.h"
+#include <cstdint>
 
 /**
  * @brief 属性的值
@@ -36,6 +38,9 @@ public:
   friend class BooleanType;
   friend class CharType;
   friend class VectorType;
+  friend class BigIntegerType;
+  friend class DateType;
+  friend class TextType;
 
   Value() = default;
 
@@ -44,6 +49,8 @@ public:
   Value(AttrType attr_type, char *data, int length = 4) : attr_type_(attr_type) { this->set_data(data, length); }
 
   explicit Value(int val);
+  explicit Value(int64_t val);
+  explicit Value(long long val);
   explicit Value(float val);
   explicit Value(bool val);
   explicit Value(const char *s, int len = 0);
@@ -108,6 +115,7 @@ public:
    * 如果当前的类型与期望获取的类型不符，就会执行转换操作
    */
   int      get_int() const;
+  int64_t  get_bigint() const;
   float    get_float() const;
   string   get_string() const;
   string_t get_string_t() const;
@@ -115,6 +123,8 @@ public:
 
 public:
   void set_int(int val);
+  void set_bigint(int64_t val);
+  void set_date(int date_numeric);
   void set_float(float val);
   void set_string(const char *s, int len = 0);
   void set_empty_string(int len);
@@ -127,6 +137,7 @@ private:
   union Val
   {
     int32_t int_value_;
+    int64_t bigint_value_;
     float   float_value_;
     bool    bool_value_;
     char   *pointer_value_;

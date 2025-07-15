@@ -86,6 +86,9 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         TRX_COMMIT
         TRX_ROLLBACK
         INT_T
+        BIGINT_T
+        DATE_T
+        TEXT_T
         STRING_T
         FLOAT_T
         VECTOR_T
@@ -135,7 +138,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
   vector<string> *                           relation_list;
   vector<string> *                           key_list;
   char *                                     cstring;
-  int                                        number;
+  long long                                  number;
   float                                      floats;
 }
 
@@ -366,7 +369,7 @@ attr_def:
       $$ = new AttrInfoSqlNode;
       $$->type = (AttrType)$2;
       $$->name = $1;
-      $$->length = 4;
+      $$->length = get_default_length((AttrType)$2);
     }
     ;
 number:
@@ -374,7 +377,10 @@ number:
     ;
 type:
     INT_T      { $$ = static_cast<int>(AttrType::INTS); }
+    | BIGINT_T { $$ = static_cast<int>(AttrType::BIGINTS); }
+    | DATE_T   { $$ = static_cast<int>(AttrType::DATES); }
     | STRING_T { $$ = static_cast<int>(AttrType::CHARS); }
+    | TEXT_T   { $$ = static_cast<int>(AttrType::TEXTS); }
     | FLOAT_T  { $$ = static_cast<int>(AttrType::FLOATS); }
     | VECTOR_T { $$ = static_cast<int>(AttrType::VECTORS); }
     ;
@@ -437,7 +443,7 @@ value_list:
     ;
 value:
     NUMBER {
-      $$ = new Value((int)$1);
+      $$ = new Value((long long)$1);
       @$ = @1;
     }
     |FLOAT {
