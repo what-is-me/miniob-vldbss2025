@@ -60,7 +60,17 @@ GroupByVecPhysicalOperator::GroupByVecPhysicalOperator(
     }
   }
 #else
-  hash_table_ = std::make_unique<StandardAggregateHashTable>(aggregate_expressions_);
+  hash_table_         = std::make_unique<StandardAggregateHashTable>(aggregate_expressions_);
+  hash_table_scanner_ = std::make_unique<StandardAggregateHashTable::Scanner>(hash_table_.get());
+  for (int i = 0; i < group_by_exprs_.size(); ++i) {
+    output_chunk_.add_column(
+        std::make_unique<Column>(group_by_exprs_[i]->value_type(), group_by_exprs_[i]->value_length()), i);
+  }
+  for (int i = 0; i < aggregate_expressions_.size(); ++i) {
+    output_chunk_.add_column(
+        std::make_unique<Column>(aggregate_expressions_[i]->value_type(), aggregate_expressions_[i]->value_length()),
+        group_by_exprs_.size() + i);
+  }
 #endif
 }
 
