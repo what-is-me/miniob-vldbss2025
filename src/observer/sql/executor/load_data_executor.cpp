@@ -105,10 +105,15 @@ void LoadDataExecutor::load_data(Table *table, const char *file_name, char termi
   vector<Value>       record_values(field_num);
   string              line;
   vector<string> file_values;
-  const string        delim("|");
   int                      line_num        = 0;
   [[maybe_unused]]int                      insertion_count = 0;
   RC                       rc              = RC::SUCCESS;
+  // 构造columns数组，个数为table的field_num
+  std::vector<std::unique_ptr<Column>> columns;
+  for (int i = 0; i < field_num; i++) {
+    const FieldMeta *field = table->table_meta().field(i);
+    columns.emplace_back(make_unique<Column>(*field));
+  }
   while (!fs.eof() && RC::SUCCESS == rc) {
     getline(fs, line);
     line_num++;
@@ -117,7 +122,7 @@ void LoadDataExecutor::load_data(Table *table, const char *file_name, char termi
     }
 
     file_values.clear();
-    common::split_string(line, delim, file_values);
+    common::split_string(line, terminated, enclosed, file_values);
     stringstream errmsg;
 
     if (table->table_meta().storage_format() == StorageFormat::ROW_FORMAT) {
@@ -131,12 +136,66 @@ void LoadDataExecutor::load_data(Table *table, const char *file_name, char termi
     } else if (table->table_meta().storage_format() == StorageFormat::PAX_FORMAT) {
       // your code here
       // Todo: 参照insert_record_from_file实现
-      rc = RC::UNIMPLEMENTED;
+      if (file_values.size() < record_values.size()) {
+        // return RC::SCHEMA_FIELD_MISSING;
+        throw runtime_error("Insert record size too small");
+      }
+
+      stringstream deserialize_stream;
+      for (int i = 0; i < field_num && RC::SUCCESS == rc; i++) {
+        const FieldMeta *field = table->table_meta().field(i + sys_field_num);
+
+        string &file_value = file_values[i];
+        if (field->type() != AttrType::CHARS) {
+          common::strip(file_value);
+        }
+        rc = DataType::type_instance(field->type())->set_value_from_str(record_values[i], file_value);
+        if (rc != RC::SUCCESS) {
+          LOG_WARN("Failed to deserialize value from string: %s, type=%d", file_value.c_str(), field->type());
+          result_string << "Line:" << line_num << " insert record failed:" << errmsg.str() << ". error:" << strrc(rc)
+                      << endl;
+        }
+      }
+
+      if (RC::SUCCESS == rc) {
+        // 插入对应的column
+        for (int i = 0; i < record_values.size(); i++) {
+          rc = columns[i]->append_value(record_values[i]);
+          if (OB_FAIL(rc)) {
+            LOG_WARN("Failed to append value to record, rc=%d", rc);
+            rc = RC::INVALID_ARGUMENT;
+            throw runtime_error("Failed to append value to record");
+          }
+        }
+
+        // 当前column列满了，插入chunk
+        if (columns[0]->count() == columns[0]->capacity()) {
+          Chunk chunk;
+          for (int i = 0; i < columns.size(); i++) {
+            chunk.add_column(std::move(columns[i]), i);
+            const FieldMeta *field = table->table_meta().field(i);
+            columns[i] = std::make_unique<Column>(*field);
+          }
+          table->insert_chunk(chunk);
+        }
+      }
+      // return rc;
+      rc = RC::SUCCESS;
     } else {
       rc = RC::UNSUPPORTED;
       result_string << "Unsupported storage format: " << strrc(rc) << endl;
     }
   }
+
+  if (table->table_meta().storage_format() == StorageFormat::PAX_FORMAT && columns[0]->count() != 0) {
+    Chunk chunk;
+    for (int i = 0; i < columns.size(); i++) {
+      chunk.add_column(std::move(columns[i]), i);
+      // 不用清空了，以后不用了
+    }
+    table->insert_chunk(chunk);
+  }
+
   fs.close();
 
   struct timespec end_time;

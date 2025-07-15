@@ -72,7 +72,7 @@ string &str_to_lower(string &s);
  * @param[in,out] results     ector containing the split up string
  */
 void split_string(const string &str, string delim, set<string> &results);
-void split_string(const string &str, string delim, vector<string> &results);
+void split_string(const string &str, char delim, char enclosed_c, vector<string> &results);
 void split_string(char *str, char dim, vector<char *> &results, bool keep_null = false);
 
 void merge_string(string &str, string delim, vector<string> &result, size_t result_len = 0);
