@@ -19,8 +19,15 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/sstream.h"
 #include "common/lang/string.h"
 #include "common/log/log.h"
+#include "common/type/attr_type.h"
+#include <cstdint>
+#include <stdexcept>
 
 Value::Value(int val) { set_int(val); }
+
+Value::Value(int64_t val) { set_bigint(val); }
+
+Value::Value(long long val) { set_bigint(val); }
 
 Value::Value(float val) { set_float(val); }
 
@@ -116,10 +123,21 @@ void Value::set_data(char *data, int length)
     case AttrType::CHARS: {
       set_string(data, length);
     } break;
+    case AttrType::TEXTS: {
+      set_text(data, length);
+    } break;
+    case AttrType::DATES: {
+      value_.int_value_ = *(int *)data;
+      length_           = length;
+    } break;
     case AttrType::INTS: {
       value_.int_value_ = *(int *)data;
       length_           = length;
     } break;
+    case AttrType::BIGINTS: {
+      value_.bigint_value_ = *(int64_t *)data;
+      length_              = length;
+    }
     case AttrType::FLOATS: {
       value_.float_value_ = *(float *)data;
       length_             = length;
@@ -142,6 +160,14 @@ void Value::set_int(int val)
   length_           = sizeof(val);
 }
 
+void Value::set_bigint(int64_t val)
+{
+  reset();
+  attr_type_           = AttrType::BIGINTS;
+  value_.bigint_value_ = val;
+  length_              = sizeof(val);
+}
+
 void Value::set_float(float val)
 {
   reset();
@@ -157,10 +183,39 @@ void Value::set_boolean(bool val)
   length_            = sizeof(val);
 }
 
+void Value::set_date(int date_numeric)
+{
+  reset();
+  attr_type_         = AttrType::DATES;
+  value_.int_value_ = date_numeric;
+  length_            = 4;
+}
+
+
 void Value::set_string(const char *s, int len /*= 0*/)
 {
   reset();
   attr_type_ = AttrType::CHARS;
+  if (s == nullptr) {
+    value_.pointer_value_ = nullptr;
+    length_               = 0;
+  } else {
+    own_data_ = true;
+    if (len > 0) {
+      len = strnlen(s, len);
+    } else {
+      len = strlen(s);
+    }
+    value_.pointer_value_ = new char[len + 1];
+    length_               = len;
+    memcpy(value_.pointer_value_, s, len);
+    value_.pointer_value_[len] = '\0';
+  }
+}
+
+void Value::set_text(const char *s, int len) {
+  reset();
+  attr_type_ = AttrType::TEXTS;
   if (s == nullptr) {
     value_.pointer_value_ = nullptr;
     length_               = 0;
@@ -197,10 +252,14 @@ void Value::set_value(const Value &value)
     case AttrType::INTS: {
       set_int(value.get_int());
     } break;
+    case AttrType::BIGINTS: {
+      set_bigint(value.get_bigint());
+    } break;
     case AttrType::FLOATS: {
       set_float(value.get_float());
     } break;
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       set_string(value.get_string().c_str());
     } break;
     case AttrType::BOOLEANS: {
@@ -225,7 +284,8 @@ void Value::set_string_from_other(const Value &other)
 char *Value::data() const
 {
   switch (attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS:  {
       return value_.pointer_value_;
     } break;
     default: {
@@ -261,11 +321,45 @@ int Value::get_int() const
     case AttrType::INTS: {
       return value_.int_value_;
     }
+    case AttrType::BIGINTS: {
+      return (int)value_.bigint_value_;
+    }
     case AttrType::FLOATS: {
       return (int)(value_.float_value_);
     }
     case AttrType::BOOLEANS: {
       return (int)(value_.bool_value_);
+    }
+    default: {
+      LOG_WARN("unknown data type. type=%d", attr_type_);
+      return 0;
+    }
+  }
+  return 0;
+}
+
+int64_t Value::get_bigint() const
+{
+  switch (attr_type_) {
+    case AttrType::CHARS: {
+      try {
+        return (int64_t)(stol(value_.pointer_value_));
+      } catch (exception const &ex) {
+        LOG_TRACE("failed to convert string to number. s=%s, ex=%s", value_.pointer_value_, ex.what());
+        return 0;
+      }
+    }
+    case AttrType::INTS: {
+      return (int64_t)value_.int_value_;
+    }
+    case AttrType::BIGINTS: {
+      return value_.bigint_value_;
+    }
+    case AttrType::FLOATS: {
+      return (int64_t)(value_.float_value_);
+    }
+    case AttrType::BOOLEANS: {
+      return (int64_t)(value_.bool_value_);
     }
     default: {
       LOG_WARN("unknown data type. type=%d", attr_type_);
@@ -289,6 +383,9 @@ float Value::get_float() const
     case AttrType::INTS: {
       return float(value_.int_value_);
     } break;
+    case AttrType::BIGINTS: {
+      return float(value_.bigint_value_);
+    }
     case AttrType::FLOATS: {
       return value_.float_value_;
     } break;
@@ -307,7 +404,7 @@ string Value::get_string() const { return this->to_string(); }
 
 string_t Value::get_string_t() const
 {
-  ASSERT(attr_type_ == AttrType::CHARS, "attr type is not CHARS");
+  ASSERT(attr_type_ == AttrType::CHARS || attr_type_ == AttrType::TEXTS, "attr type is not CHARS");
   return string_t(value_.pointer_value_, length_);
 }
 
@@ -335,6 +432,9 @@ bool Value::get_boolean() const
     case AttrType::INTS: {
       return value_.int_value_ != 0;
     } break;
+    case AttrType::BIGINTS: {
+      return value_.bigint_value_ != 0;
+    }
     case AttrType::FLOATS: {
       float val = value_.float_value_;
       return val >= EPSILON || val <= -EPSILON;

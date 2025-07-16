@@ -12,6 +12,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <iostream>
 #include <cstring>
+#include <stdexcept>
 
 using namespace std;
 struct string_t
@@ -65,6 +66,25 @@ public:
   bool empty() const { return value.inlined.length == 0; }
 
   string get_string() const { return string(data(), size()); }
+
+  void set_offset(int64_t offset) {
+    value.pointer.ptr = (char *)offset;
+  }
+
+  char* get_noinline_ptr() {
+    return value.pointer.ptr;
+  }
+
+  void set_noinline_ptr(char* ptr) {
+    value.pointer.ptr = ptr;
+  }
+
+  int64_t get_offset() const {
+    if(is_inlined()) {
+      throw std::runtime_error("string_t::get_offset() called on inlined string");
+    }
+    return (int64_t)value.pointer.ptr;
+  }
 
   bool operator==(const string_t &r) const
   {

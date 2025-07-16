@@ -10,39 +10,27 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include "common/sys/rc.h"
 #include "common/type/data_type.h"
 
 /**
- * @brief 整型类型
+ * @brief 固定长度的字符串类型
  * @ingroup DataType
  */
-class IntegerType : public DataType
+class DateType : public DataType
 {
 public:
-  IntegerType() : DataType(AttrType::INTS) {}
-  virtual ~IntegerType() {}
+  DateType() : DataType(AttrType::DATES) {}
+
+  virtual ~DateType() = default;
 
   int compare(const Value &left, const Value &right) const override;
-  int compare(const Column &left, const Column &right, int left_idx, int right_idx) const override;
-
-  RC add(const Value &left, const Value &right, Value &result) const override;
-  RC subtract(const Value &left, const Value &right, Value &result) const override;
-  RC multiply(const Value &left, const Value &right, Value &result) const override;
-  RC negative(const Value &val, Value &result) const override;
 
   RC cast_to(const Value &val, AttrType type, Value &result) const override;
 
-  int cast_cost(const AttrType type) override
-  {
-    if (type == AttrType::INTS || type == AttrType::BIGINTS) {
-      return 0;
-    } else if (type == AttrType::FLOATS) {
-      return 1;
-    }
-    return INT32_MAX;
-  }
-
   RC set_value_from_str(Value &val, const string &data) const override;
+
+  int cast_cost(AttrType type) override;
 
   RC to_string(const Value &val, string &result) const override;
 };

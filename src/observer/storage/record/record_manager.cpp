@@ -14,13 +14,17 @@ See the Mulan PSL v2 for more details. */
 #include "storage/record/record_manager.h"
 #include "common/log/log.h"
 #include "common/sys/rc.h"
+#include "common/type/attr_type.h"
+#include "common/type/string_t.h"
 #include "storage/common/chunk.h"
 #include "storage/common/column.h"
 #include "storage/common/condition_filter.h"
+#include "storage/record/lob_handler.h"
 #include "storage/trx/trx.h"
 #include "storage/clog/log_handler.h"
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 using namespace common;
@@ -482,31 +486,41 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
     record_offsets[col_id] = record_offset;
     record_offset += get_field_len(col_id);
   }
-  if (page_header_->record_num > 0) {
-    for (int i = 0; i < insert_rows; ++i) {
-      const int row_id = i + start_row;
-      for (int j = 0; j < chunk.column_num(); ++j) {
-        const int col_id        = chunk.column_ids(j);
-        const int record_offset = record_offsets.at(col_id);
-        const int field_len     = get_field_len(col_id);
-        memcpy(record_buffer.data() + record_offset, chunk.get_value(col_id, row_id).data(), field_len);
+  Bitmap bitmap(bitmap_, page_header_->record_capacity);
+  bitmap.set_bits(insert_rows);
+  page_header_->record_num = insert_rows;
+  for (int j = 0; j < chunk.column_num(); ++j) {
+    const int col_id = chunk.column_ids(j);
+    // 判断该列是否是TEXTS且列中存在vector buffer
+    if (chunk.column(j).attr_type() == AttrType::TEXTS && chunk.column(j).is_vector_buffer_null() == false) {
+      for (int i = start_row; i < start_row + insert_rows; ++i) {
+        string_t *str = ((string_t *)chunk.column(j).data()) + i;
+        // 若不是内联字符串，设置偏移量
+        if (!str->is_inlined()) {
+          ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
+          int64_t        offset = 0;
+          LobFileHandler lob_file_handler;
+          // 打开文件
+          if (lob_file_handler.open_file("text_output") == RC::FILE_NOT_EXIST) {
+            auto res = lob_file_handler.create_file("text_output");
+            if (res != RC::SUCCESS) {
+              LOG_ERROR("Failed to create lob file.");
+              return res;
+            }
+          }
+          lob_file_handler.insert_data(offset, str->size(), str->data());
+          // 关闭文件
+          lob_file_handler.close_file();
+          str->set_offset(offset);
+        }
+        chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
       }
-      RC rc = insert_record(record_buffer.data(), nullptr);
-      if (OB_FAIL(rc)) {
-        LOG_ERROR("Failed to insert record. page_num %d:%d. rc=%s", disk_buffer_pool_->file_desc(), frame_->page_num(), strrc(rc));
-      }
-    }
-    return rc;
-  } else {
-    Bitmap bitmap(bitmap_, page_header_->record_capacity);
-    bitmap.set_bits(insert_rows);
-    page_header_->record_num = insert_rows;
-    for (int j = 0; j < chunk.column_num(); ++j) {
-      const int col_id = chunk.column_ids(j);
+    } else {
       chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
     }
-    return RC::SUCCESS;
   }
+  frame_->mark_dirty();
+  return rc;
 }
 
 RC PaxRecordPageHandler::delete_record(const RID *rid)
@@ -560,15 +574,31 @@ RC PaxRecordPageHandler::get_record(const RID &rid, Record &record)
 RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
 {
   chunk.reset_data();
+  RC     rc = RC::SUCCESS;
   Bitmap bitmap(bitmap_, page_header_->record_capacity);
   bool   fulfilled = page_header_->record_num == page_header_->record_capacity;
   for (int j = 0; j < chunk.column_num(); ++j) {
     const int col_id = chunk.column_ids(j);
-    Column    &column = chunk.column(j);
+    Column   &column = chunk.column(j);
     if (!fulfilled) {
       for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
         index = bitmap.next_setted_bit(index);
-        RC rc = column.append_one(get_field_data(index, col_id));
+        if (chunk.column(j).attr_type() == AttrType::TEXTS) {
+          string_t str = *(string_t *)get_field_data(index, j);
+          if (!str.is_inlined()) {
+            int64_t        offset = str.get_offset();
+            LobFileHandler lob_file_handler;
+            if (lob_file_handler.open_file("text_output") == RC::FILE_NOT_EXIST) {
+              return RC::FILE_NOT_EXIST;
+            }
+            str = chunk.column(j).get_vector_buffer()->empty_string(str.size());
+            lob_file_handler.get_data(offset, str.size(), str.get_noinline_ptr());
+            lob_file_handler.close_file();
+          }
+          rc = column.append_one((char *)&str);
+        } else {
+          rc = column.append_one(get_field_data(index, col_id));
+        }
         if (OB_FAIL(rc)) {
           return rc;
         }
@@ -737,56 +767,25 @@ RC RecordFileHandler::insert_chunk(const Chunk &chunk, int record_size)
 {
   unique_ptr<RecordPageHandler> record_page_handler(RecordPageHandler::create(storage_format_));
   auto                          find_empty_page = [this, record_size](RecordPageHandler *record_page_handler) {
-    RC      ret              = RC::SUCCESS;
-    bool    page_found       = false;
-    PageNum current_page_num = 0;
-
-    // 当前要访问free_pages对象，所以需要加锁。在非并发编译模式下，不需要考虑这个锁
-    lock_.lock();
-
-    // 找到没有填满的页面
-    while (!free_pages_.empty()) {
-      current_page_num = *free_pages_.begin();
-
-      ret = record_page_handler->init(*disk_buffer_pool_, *log_handler_, current_page_num, ReadWriteMode::READ_WRITE);
-      if (OB_FAIL(ret)) {
-        lock_.unlock();
-        LOG_WARN("failed to init record page handler. page num=%d, rc=%d:%s", current_page_num, ret, strrc(ret));
-        return ret;
-      }
-
-      if (record_page_handler->is_empty()) {
-        page_found = true;
-        break;
-      }
-      record_page_handler->cleanup();
-      free_pages_.erase(free_pages_.begin());
+    // 直接分配一个新的页面
+    RC     ret   = RC::SUCCESS;
+    Frame *frame = nullptr;
+    if ((ret = disk_buffer_pool_->allocate_page(&frame)) != RC::SUCCESS) {
+      LOG_ERROR("Failed to allocate page while inserting record. ret:%d", ret);
+      return ret;
     }
-    lock_.unlock();  // 如果找到了一个有效的页面，那么此时已经拿到了页面的写锁
-
-    // 找不到就分配一个新的页面
-    if (!page_found) {
-      Frame *frame = nullptr;
-      if ((ret = disk_buffer_pool_->allocate_page(&frame)) != RC::SUCCESS) {
-        LOG_ERROR("Failed to allocate page while inserting record. ret:%d", ret);
-        return ret;
-      }
-
-      current_page_num = frame->page_num();
-
-      ret = record_page_handler->init_empty_page(
-          *disk_buffer_pool_, *log_handler_, current_page_num, record_size, table_meta_, lob_handler_);
-      if (OB_FAIL(ret)) {
-        frame->unpin();
-        LOG_ERROR("Failed to init empty page. ret:%d", ret);
-        // this is for allocate_page
-        return ret;
-      }
+    PageNum current_page_num = frame->page_num();
+    ret                      = record_page_handler->init_empty_page(
+        *disk_buffer_pool_, *log_handler_, current_page_num, record_size, table_meta_, lob_handler_);
+    if (OB_FAIL(ret)) {
       frame->unpin();
-      lock_.lock();
-      free_pages_.insert(current_page_num);
-      lock_.unlock();
+      LOG_ERROR("Failed to init empty page. ret:%d", ret);
+      return ret;
     }
+    frame->unpin();
+    lock_.lock();
+    free_pages_.insert(current_page_num);
+    lock_.unlock();
     return ret;
   };
 

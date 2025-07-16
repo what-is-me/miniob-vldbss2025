@@ -97,20 +97,35 @@ void split_string(const string &str, string delim, set<string> &results)
   }
 }
 
-void split_string(const string &str, string delim, vector<string> &results)
-{
-  int    cut_at;
-  string tmp_str(str);
-  while ((cut_at = tmp_str.find_first_of(delim)) != (signed)tmp_str.npos) {
-    if (cut_at > 0) {
-      results.push_back(tmp_str.substr(0, cut_at));
+void split_string(const string &str, char delim, char enclosed_c, vector<string> &results) {
+  results.clear();
+  string field;
+  bool in_enclosure = false;
+
+  for (size_t i = 0; i < str.size(); ++i) {
+    char c = str[i];
+
+    if (c == enclosed_c) {
+      if (in_enclosure && i + 1 < str.size() && str[i + 1] == enclosed_c) {
+        // 双引号转义，加入一个引号
+        field += enclosed_c;
+        ++i; // 跳过第二个引号
+      } else {
+        // 切换引号状态
+        in_enclosure = !in_enclosure;
+      }
+    } else if (c == delim && !in_enclosure) {
+      // 分隔符，添加字段
+      results.push_back(field);
+      field.clear();
+    } else {
+      // 正常字符，加入当前字段
+      field += c;
     }
-    tmp_str = tmp_str.substr(cut_at + 1);
   }
 
-  if (tmp_str.length() > 0) {
-    results.push_back(tmp_str);
-  }
+  // 加入最后一个字段
+  results.push_back(field);
 }
 
 void split_string(char *str, char dim, vector<char *> &results, bool keep_null)

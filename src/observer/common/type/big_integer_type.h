@@ -16,11 +16,11 @@ See the Mulan PSL v2 for more details. */
  * @brief 整型类型
  * @ingroup DataType
  */
-class IntegerType : public DataType
+class BigIntegerType : public DataType
 {
 public:
-  IntegerType() : DataType(AttrType::INTS) {}
-  virtual ~IntegerType() {}
+  BigIntegerType() : DataType(AttrType::BIGINTS) {}
+  virtual ~BigIntegerType() {}
 
   int compare(const Value &left, const Value &right) const override;
   int compare(const Column &left, const Column &right, int left_idx, int right_idx) const override;
@@ -34,7 +34,7 @@ public:
 
   int cast_cost(const AttrType type) override
   {
-    if (type == AttrType::INTS || type == AttrType::BIGINTS) {
+    if (type == AttrType::BIGINTS || type == AttrType::INTS) {
       return 0;
     } else if (type == AttrType::FLOATS) {
       return 1;
