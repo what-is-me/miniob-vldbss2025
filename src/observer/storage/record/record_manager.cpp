@@ -580,7 +580,7 @@ RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
   for (int j = 0; j < chunk.column_num(); ++j) {
     const int col_id = chunk.column_ids(j);
     Column   &column = chunk.column(j);
-    if (!fulfilled) {
+    if (!fulfilled || chunk.column(j).attr_type() == AttrType::TEXTS) {
       for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
         index = bitmap.next_setted_bit(index);
         if (chunk.column(j).attr_type() == AttrType::TEXTS) {
@@ -796,6 +796,7 @@ RC RecordFileHandler::insert_chunk(const Chunk &chunk, int record_size)
       return rc;
     }
     rc = record_page_handler->insert_chunk(chunk, start_row, insert_rows);
+    record_page_handler->cleanup();
     if (OB_FAIL(rc) && rc != RC::RECORD_NOMEM) {
       return rc;
     }

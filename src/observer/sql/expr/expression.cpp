@@ -13,8 +13,12 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "sql/expr/expression.h"
+#include "common/type/attr_type.h"
+#include "common/type/data_type.h"
 #include "sql/expr/tuple.h"
 #include "sql/expr/arithmetic_operator.hpp"
+#include "storage/common/column.h"
+#include <cstdint>
 
 using namespace std;
 
@@ -91,7 +95,7 @@ RC CastExpr::cast(const Value &value, Value &cast_value) const
 RC CastExpr::get_value(const Tuple &tuple, Value &result) const
 {
   Value value;
-  RC rc = child_->get_value(tuple, value);
+  RC    rc = child_->get_value(tuple, value);
   if (rc != RC::SUCCESS) {
     return rc;
   }
@@ -102,7 +106,7 @@ RC CastExpr::get_value(const Tuple &tuple, Value &result) const
 RC CastExpr::get_column(Chunk &chunk, Column &column)
 {
   Column child_column;
-  RC rc = child_->get_column(chunk, child_column);
+  RC     rc = child_->get_column(chunk, child_column);
   if (rc != RC::SUCCESS) {
     return rc;
   }
@@ -122,7 +126,7 @@ RC CastExpr::get_column(Chunk &chunk, Column &column)
 RC CastExpr::try_get_value(Value &result) const
 {
   Value value;
-  RC rc = child_->try_get_value(value);
+  RC    rc = child_->try_get_value(value);
   if (rc != RC::SUCCESS) {
     return rc;
   }
@@ -134,8 +138,7 @@ RC CastExpr::try_get_value(Value &result) const
 
 ComparisonExpr::ComparisonExpr(CompOp comp, unique_ptr<Expression> left, unique_ptr<Expression> right)
     : comp_(comp), left_(std::move(left)), right_(std::move(right))
-{
-}
+{}
 
 ComparisonExpr::~ComparisonExpr() {}
 
@@ -175,8 +178,8 @@ RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &re
 RC ComparisonExpr::try_get_value(Value &cell) const
 {
   if (left_->type() == ExprType::VALUE && right_->type() == ExprType::VALUE) {
-    ValueExpr *  left_value_expr  = static_cast<ValueExpr *>(left_.get());
-    ValueExpr *  right_value_expr = static_cast<ValueExpr *>(right_.get());
+    ValueExpr   *left_value_expr  = static_cast<ValueExpr *>(left_.get());
+    ValueExpr   *right_value_expr = static_cast<ValueExpr *>(right_.get());
     const Value &left_cell        = left_value_expr->get_value();
     const Value &right_cell       = right_value_expr->get_value();
 
@@ -238,11 +241,11 @@ RC ComparisonExpr::eval(Chunk &chunk, vector<uint8_t> &select)
     LOG_WARN("cannot compare columns with different types");
     return RC::INTERNAL;
   }
-  if (left_column.attr_type() == AttrType::INTS) {
+  if (left_column.attr_type() == AttrType::INTS || left_column.attr_type() == AttrType::DATES) {
     rc = compare_column<int>(left_column, right_column, select);
   } else if (left_column.attr_type() == AttrType::FLOATS) {
     rc = compare_column<float>(left_column, right_column, select);
-  } else if (left_column.attr_type() == AttrType::CHARS) {
+  } else if (left_column.attr_type() == AttrType::CHARS || left_column.attr_type() == AttrType::TEXTS) {
     int rows = 0;
     if (left_column.column_type() == Column::Type::CONSTANT_COLUMN) {
       rows = right_column.count();
@@ -250,17 +253,18 @@ RC ComparisonExpr::eval(Chunk &chunk, vector<uint8_t> &select)
       rows = left_column.count();
     }
     for (int i = 0; i < rows; ++i) {
-      Value left_val = left_column.get_value(i);
+      Value left_val  = left_column.get_value(i);
       Value right_val = right_column.get_value(i);
-      bool        result   = false;
-      rc                   = compare_value(left_val, right_val, result);
+      bool  result    = false;
+      rc              = compare_value(left_val, right_val, result);
       if (rc != RC::SUCCESS) {
         LOG_WARN("failed to compare tuple cells. rc=%s", strrc(rc));
         return rc;
       }
       select[i] &= result ? 1 : 0;
     }
-
+  } else if (left_column.attr_type() == AttrType::BIGINTS) {
+    rc = compare_column<int64_t>(left_column, right_column, select);
   } else {
     LOG_WARN("unsupported data type %d", left_column.attr_type());
     return RC::INTERNAL;
@@ -346,10 +350,14 @@ AttrType ArithmeticExpr::value_type() const
     return left_->value_type();
   }
 
-  if ((left_->value_type() == AttrType::INTS) &&
-   (right_->value_type() == AttrType::INTS) &&
+  if ((left_->value_type() == AttrType::INTS) && (right_->value_type() == AttrType::INTS) &&
       arithmetic_type_ != Type::DIV) {
     return AttrType::INTS;
+  }
+
+  if ((left_->value_type() == AttrType::BIGINTS) && (right_->value_type() == AttrType::BIGINTS) &&
+      arithmetic_type_ != Type::DIV) {
+    return AttrType::BIGINTS;
   }
 
   return AttrType::FLOATS;
@@ -404,6 +412,9 @@ RC ArithmeticExpr::execute_calc(
       } else if (attr_type == AttrType::FLOATS) {
         binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, float, AddOperator>(
             (float *)left.data(), (float *)right.data(), (float *)result.data(), result.capacity());
+      } else if (attr_type == AttrType::BIGINTS) {
+        binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, int64_t, AddOperator>(
+            (int64_t *)left.data(), (int64_t *)right.data(), (int64_t *)result.data(), result.capacity());
       } else {
         rc = RC::UNIMPLEMENTED;
       }
@@ -415,6 +426,9 @@ RC ArithmeticExpr::execute_calc(
       } else if (attr_type == AttrType::FLOATS) {
         binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, float, SubtractOperator>(
             (float *)left.data(), (float *)right.data(), (float *)result.data(), result.capacity());
+      } else if (attr_type == AttrType::BIGINTS) {
+        binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, int64_t, SubtractOperator>(
+            (int64_t *)left.data(), (int64_t *)right.data(), (int64_t *)result.data(), result.capacity());
       } else {
         rc = RC::UNIMPLEMENTED;
       }
@@ -426,6 +440,9 @@ RC ArithmeticExpr::execute_calc(
       } else if (attr_type == AttrType::FLOATS) {
         binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, float, MultiplyOperator>(
             (float *)left.data(), (float *)right.data(), (float *)result.data(), result.capacity());
+      } else if (attr_type == AttrType::BIGINTS) {
+        binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, int64_t, MultiplyOperator>(
+            (int64_t *)left.data(), (int64_t *)right.data(), (int64_t *)result.data(), result.capacity());
       } else {
         rc = RC::UNIMPLEMENTED;
       }
@@ -437,6 +454,9 @@ RC ArithmeticExpr::execute_calc(
       } else if (attr_type == AttrType::FLOATS) {
         binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, float, DivideOperator>(
             (float *)left.data(), (float *)right.data(), (float *)result.data(), result.capacity());
+      } else if (attr_type == AttrType::BIGINTS) {
+        binary_operator<LEFT_CONSTANT, RIGHT_CONSTANT, int64_t, DivideOperator>(
+            (int64_t *)left.data(), (int64_t *)right.data(), (int64_t *)result.data(), result.capacity());
       } else {
         rc = RC::UNIMPLEMENTED;
       }
@@ -447,6 +467,9 @@ RC ArithmeticExpr::execute_calc(
       } else if (attr_type == AttrType::FLOATS) {
         unary_operator<LEFT_CONSTANT, float, NegateOperator>(
             (float *)left.data(), (float *)result.data(), result.capacity());
+      } else if (attr_type == AttrType::BIGINTS) {
+        unary_operator<LEFT_CONSTANT, int64_t, NegateOperator>(
+            (int64_t *)left.data(), (int64_t *)result.data(), result.capacity());
       } else {
         rc = RC::UNIMPLEMENTED;
       }
