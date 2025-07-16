@@ -345,7 +345,7 @@ inline int get_default_length(AttrType type) {
     case AttrType::CHARS: return 4;
     case AttrType::BIGINTS: return 8;
     case AttrType::DATES: return 4;
-    case AttrType::TEXTS: return 12;
+    case AttrType::TEXTS: return 16;
     case AttrType::INTS: return 4;
     case AttrType::FLOATS: return 4;
     case AttrType::VECTORS: return 4;

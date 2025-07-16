@@ -31,7 +31,6 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
 {
   switch (type) {
     case AttrType::DATES: {
-      // TODO:
       const char *s = val.value_.pointer_value_;
 
       int year, month, day;
@@ -44,11 +43,6 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
         throw std::invalid_argument("Invalid date string");
         result.value_.int_value_ = 0;
       }
-      break;
-    }
-    case AttrType::TEXTS: {
-      // TODO:
-      // result.set_string(val.data());
       break;
     }
     default: return RC::UNIMPLEMENTED;

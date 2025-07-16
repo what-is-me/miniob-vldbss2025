@@ -10,6 +10,7 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <memory>
 #include <string.h>
 
 #include "storage/field/field_meta.h"
@@ -119,6 +120,10 @@ public:
   void set_column_type(Type column_type) { column_type_ = column_type; }
   void set_attr_type(AttrType attr_type) { attr_type_ = attr_type; }
   void set_count(int count) { count_ = count; }
+
+  VectorBuffer *get_vector_buffer();
+
+  bool is_vector_buffer_null() const { return vector_buffer_ == nullptr;}
 
   int                     count() const { return count_; }
   int                     capacity() const { return capacity_; }
