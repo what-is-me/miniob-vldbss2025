@@ -16,6 +16,8 @@ public:
   RC next(Chunk &chunk) override;
   RC close() override;
 
+  RC tuple_schema(TupleSchema &schema) const override { return children_.front()->tuple_schema(schema); }
+
 private:
   vector<unique_ptr<Expression>> order_by_exprs_;
   vector<bool>                   asc_;

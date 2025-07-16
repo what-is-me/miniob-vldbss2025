@@ -12,6 +12,7 @@ public:
   RC open(Trx *trx) override;
   RC next(Chunk &chunk) override;
   RC close() override;
+  RC tuple_schema(TupleSchema &schema) const override { return children_.front()->tuple_schema(schema); }
 
 private:
   int               n_;
