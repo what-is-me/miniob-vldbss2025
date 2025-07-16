@@ -87,12 +87,12 @@ RC BigIntegerType::set_value_from_str(Value &val, const string &data) const
   stringstream deserialize_stream;
   deserialize_stream.clear();  // 清理stream的状态，防止多次解析出现异常
   deserialize_stream.str(data);
-  int int_value;
-  deserialize_stream >> int_value;
+  int64_t bigint_value;
+  deserialize_stream >> bigint_value;
   if (!deserialize_stream || !deserialize_stream.eof()) {
     rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
   } else {
-    val.set_bigint(int_value);
+    val.set_bigint(bigint_value);
   }
   return rc;
 }

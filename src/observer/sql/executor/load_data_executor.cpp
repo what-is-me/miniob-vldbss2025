@@ -81,6 +81,48 @@ RC insert_record_from_file(
   return rc;
 }
 
+void split_csv_line(const string &str, char delim, char enclosed_c, vector<string> &results) {
+  results.clear();
+  string field;
+  bool in_enclosure = false;
+
+  for (size_t i = 0; i < str.size(); ++i) {
+    char c = str[i];
+
+    if (c == enclosed_c) {
+      if (in_enclosure && i + 1 < str.size() && str[i + 1] == enclosed_c) {
+        field += enclosed_c;
+        ++i; // 跳过第二个引号
+      } else {
+        in_enclosure = !in_enclosure;
+      }
+    } else if (c == delim && !in_enclosure) {
+      results.push_back(field);
+      field.clear();
+    } else {
+      field += c;
+    }
+  }
+
+  results.push_back(field);
+}
+
+// 检查引号是否闭合（数量为偶数）
+bool is_enclosure_balanced(const string& line, char enclosed_c) {
+  int count = 0;
+  for (size_t i = 0; i < line.size(); ++i) {
+    if (line[i] == enclosed_c) {
+      if (i + 1 < line.size() && line[i + 1] == enclosed_c) {
+        ++i; // 跳过转义引号
+      } else {
+        ++count;
+      }
+    }
+  }
+  return count % 2 == 0;
+}
+
+
 
 // TODO: pax format and row format
 void LoadDataExecutor::load_data(Table *table, const char *file_name, char terminated, char enclosed, SqlResult *sql_result)
@@ -114,15 +156,24 @@ void LoadDataExecutor::load_data(Table *table, const char *file_name, char termi
     const FieldMeta *field = table->table_meta().field(i);
     columns.emplace_back(make_unique<Column>(*field));
   }
+  string multiline;
   while (!fs.eof() && RC::SUCCESS == rc) {
     getline(fs, line);
+    if (!multiline.empty()) {
+      multiline += "\n";
+    }
+    multiline += line;
     line_num++;
     if (common::is_blank(line.c_str())) {
       continue;
     }
 
     file_values.clear();
-    common::split_string(line, terminated, enclosed, file_values);
+    if (!is_enclosure_balanced(multiline, enclosed)) {
+      continue;
+    }
+    split_csv_line(multiline, terminated, enclosed, file_values);
+    multiline.clear();
     stringstream errmsg;
 
     if (table->table_meta().storage_format() == StorageFormat::ROW_FORMAT) {
