@@ -519,6 +519,7 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
       chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
     }
   }
+  frame_->mark_dirty();
   return rc;
 }
 
@@ -774,7 +775,7 @@ RC RecordFileHandler::insert_chunk(const Chunk &chunk, int record_size)
       return ret;
     }
     PageNum current_page_num = frame->page_num();
-    ret = record_page_handler->init_empty_page(
+    ret                      = record_page_handler->init_empty_page(
         *disk_buffer_pool_, *log_handler_, current_page_num, record_size, table_meta_, lob_handler_);
     if (OB_FAIL(ret)) {
       frame->unpin();
