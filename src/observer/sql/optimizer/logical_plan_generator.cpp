@@ -141,6 +141,12 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
     last_oper = &group_by_oper;
   }
 
+  rc = bind_order_by_plan(select_stmt);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create order by logical plan. rc=%s", strrc(rc));
+    return rc;
+  }
+
   unique_ptr<LogicalOperator> project_oper =
       make_unique<ProjectLogicalOperator>(std::move(select_stmt->query_expressions()));
   if (*last_oper) {
@@ -149,12 +155,9 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   last_oper = &project_oper;
 
   unique_ptr<LogicalOperator> order_by_oper;
-  rc = create_order_by_plan(select_stmt, order_by_oper);
-  if (OB_FAIL(rc)) {
-    LOG_WARN("failed to create order by logical plan. rc=%s", strrc(rc));
-    return rc;
-  }
-  if (order_by_oper) {
+  if (!select_stmt->order_by().first.empty()) {
+    order_by_oper = make_unique<OrderByLogicalOperator>(
+        std::move(select_stmt->order_by().first), std::move(select_stmt->order_by().second));
     if (*last_oper) {
       order_by_oper->add_child(std::move(*last_oper));
     }
@@ -380,7 +383,7 @@ RC LogicalPlanGenerator::create_group_by_plan(SelectStmt *select_stmt, unique_pt
   return RC::SUCCESS;
 }
 
-RC LogicalPlanGenerator::create_order_by_plan(SelectStmt *select_stmt, unique_ptr<LogicalOperator> &logical_operator)
+RC LogicalPlanGenerator::bind_order_by_plan(SelectStmt *select_stmt)
 {
   vector<unique_ptr<Expression>> &order_by_expressions = select_stmt->order_by().first;
   if (order_by_expressions.empty()) {
@@ -401,10 +404,10 @@ RC LogicalPlanGenerator::create_order_by_plan(SelectStmt *select_stmt, unique_pt
     return rc;
   };
   for (auto &expression : order_by_expressions) {
-    bind_order_by_expr(expression);
+    RC rc = bind_order_by_expr(expression);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
   }
-  auto order_by_oper =
-      make_unique<OrderByLogicalOperator>(std::move(order_by_expressions), std::move(select_stmt->order_by().second));
-  logical_operator = std::move(order_by_oper);
   return RC::SUCCESS;
 }

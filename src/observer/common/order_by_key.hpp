@@ -17,20 +17,24 @@ public:
   {
     for (bool asc : ascs) {
       if (asc) {
-        comps_.push_back(+[](const Value &a, const Value &b) { return a.compare(b) < 0; });
+        comps_.push_back(+[](const Value &a, const Value &b) { return a.compare(b); });
       } else {
-        comps_.push_back(+[](const Value &a, const Value &b) { return b.compare(a) < 0; });
+        comps_.push_back(+[](const Value &a, const Value &b) { return b.compare(a); });
       }
     }
   }
   bool operator()(const OrderKey &a, const OrderKey &b) const
   {
     for (int i = 0; i < comps_.size(); ++i) {
-      if (!comps_.at(i)(a.at(i), b.at(i))) {
+      int comp = comps_.at(i)(a.at(i), b.at(i));
+      if (comp < 0) {
+        return true;
+      }
+      if (comp > 0) {
         return false;
       }
     }
-    return true;
+    return false;
   }
 
   template <typename T>
@@ -40,7 +44,7 @@ public:
   }
 
 private:
-  std::vector<bool (*)(const Value &, const Value &)> comps_;
+  std::vector<int (*)(const Value &, const Value &)> comps_;
 };
 
 using Row  = std::pair<std::vector<Value>, OrderKey>;
