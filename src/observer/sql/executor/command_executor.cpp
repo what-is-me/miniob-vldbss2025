@@ -84,6 +84,11 @@ RC CommandExecutor::execute(SQLStageEvent *sql_event)
       rc = executor.execute(sql_event);
     } break;
 
+    case StmtType::CREATE_MATERIALIZED_VIEW: {
+      // CreateMaterializedViewExecutor executor;
+      // rc = executor.execute(sql_event);
+    } break;
+
     case StmtType::EXIT: {
       rc = RC::SUCCESS;
     } break;

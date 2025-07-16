@@ -169,6 +169,17 @@ struct CreateTableSqlNode
 };
 
 /**
+ * @brief 描述一个 create materialized view 语句
+ * @ingroup SQLParser
+ */
+ class ParsedSqlNode;
+struct CreateMaterializedViewSqlNode
+{
+  string view_name;  ///< 物化视图名称
+  unique_ptr<ParsedSqlNode> select_sql_node;  ///< 用于定义物化视图数据的 SELECT 语句
+};
+
+/**
  * @brief 描述一个drop table语句
  * @ingroup SQLParser
  */
@@ -282,6 +293,7 @@ enum SqlCommandFlag
   SCF_UPDATE,
   SCF_DELETE,
   SCF_CREATE_TABLE,
+  SCF_CREATE_MATERIALIZED_VIEW,
   SCF_DROP_TABLE,
   SCF_ANALYZE_TABLE,
   SCF_CREATE_INDEX,
@@ -310,6 +322,7 @@ public:
   ErrorSqlNode        error;
   CalcSqlNode         calc;
   SelectSqlNode       selection;
+  CreateMaterializedViewSqlNode create_materialized_view;
   InsertSqlNode       insertion;
   DeleteSqlNode       deletion;
   UpdateSqlNode       update;

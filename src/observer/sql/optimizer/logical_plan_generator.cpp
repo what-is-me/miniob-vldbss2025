@@ -30,6 +30,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/project_logical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
 #include "sql/operator/group_by_logical_operator.h"
+#include "sql/operator/create_materialized_view_logic_operator.h"
 
 #include "sql/stmt/calc_stmt.h"
 #include "sql/stmt/delete_stmt.h"
@@ -38,6 +39,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/insert_stmt.h"
 #include "sql/stmt/select_stmt.h"
 #include "sql/stmt/stmt.h"
+#include "sql/stmt/create_materialized_view_stmt.h"
 
 #include "sql/expr/expression_iterator.h"
 #include <climits>
@@ -80,11 +82,33 @@ RC LogicalPlanGenerator::create(Stmt *stmt, unique_ptr<LogicalOperator> &logical
 
       rc = create_plan(explain_stmt, logical_operator);
     } break;
+    case StmtType::CREATE_MATERIALIZED_VIEW: {
+      CreateMaterializedViewStmt *create_materialized_view_stmt = static_cast<CreateMaterializedViewStmt *>(stmt);
+      rc = create_plan(create_materialized_view_stmt, logical_operator);
+    } break;
     default: {
       rc = RC::UNIMPLEMENTED;
     }
   }
   return rc;
+}
+
+RC LogicalPlanGenerator::create_plan(CreateMaterializedViewStmt *create_materialized_view_stmt, unique_ptr<LogicalOperator> &logical_operator) {
+    // 为内部的 SELECT 语句生成逻辑计划
+  unique_ptr<LogicalOperator> select_logical_operator;
+  SelectStmt& select_stmt_tmp = create_materialized_view_stmt->select_stmt();
+  RC rc = create_plan(&select_stmt_tmp, select_logical_operator);
+  if (rc != RC::SUCCESS) {
+    LOG_WARN("Failed to create logical plan for select statement in create materialized view. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  logical_operator.reset(new CreateMaterializedViewLogicalOperator(create_materialized_view_stmt->view_name()));
+
+  logical_operator->add_child(std::move(select_logical_operator));
+  
+
+  return RC::SUCCESS;
 }
 
 RC LogicalPlanGenerator::create_plan(CalcStmt *calc_stmt, unique_ptr<LogicalOperator> &logical_operator)
