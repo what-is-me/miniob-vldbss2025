@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/type/big_integer_type.h"
 #include "common/value.h"
 #include "storage/common/column.h"
+#include <cstdint>
 
 int BigIntegerType::compare(const Value &left, const Value &right) const
 {
@@ -43,6 +44,11 @@ RC BigIntegerType::cast_to(const Value &val, AttrType type, Value &result) const
   case AttrType::FLOATS: {
     float float_value = val.get_bigint();
     result.set_float(float_value);
+    return RC::SUCCESS;
+  }
+  case AttrType::INTS: {
+    int int_value = val.get_bigint();
+    result.set_int(int_value);
     return RC::SUCCESS;
   }
   default:

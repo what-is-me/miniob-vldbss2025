@@ -34,7 +34,7 @@ public:
 
   int cast_cost(const AttrType type) override
   {
-    if (type == AttrType::BIGINTS) {
+    if (type == AttrType::BIGINTS || type == AttrType::INTS) {
       return 0;
     } else if (type == AttrType::FLOATS) {
       return 1;
