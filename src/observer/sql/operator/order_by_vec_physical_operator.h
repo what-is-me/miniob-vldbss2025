@@ -3,7 +3,6 @@
 #include "common/order_by_key.hpp"
 #include "sql/operator/physical_operator.h"
 #include "storage/common/chunk.h"
-#include <vector>
 
 class OrderByVecPhysicalOperator : public PhysicalOperator
 {

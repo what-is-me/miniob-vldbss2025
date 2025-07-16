@@ -3,8 +3,6 @@
 #include "common/sys/rc.h"
 #include "storage/common/column.h"
 #include <memory>
-#include <string>
-#include <variant>
 #include <vector>
 
 OrderByVecPhysicalOperator::OrderByVecPhysicalOperator(

@@ -31,7 +31,9 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/join_logical_operator.h"
 #include "sql/operator/limit_logical_operator.h"
 #include "sql/operator/limit_vec_physical_operator.h"
+#include "sql/operator/logical_operator.h"
 #include "sql/operator/nested_loop_join_physical_operator.h"
+#include "sql/operator/order_by_limit_vec_physical_operator.h"
 #include "sql/operator/order_by_logical_operator.h"
 #include "sql/operator/order_by_vec_physical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
@@ -516,6 +518,23 @@ RC PhysicalPlanGenerator::create_vec_plan(
 RC PhysicalPlanGenerator::create_vec_plan(
     LimitLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
 {
+  if (logical_oper.children().size() == 1 && logical_oper.children().front()->type() == LogicalOperatorType::ORDER_BY) {
+    // rewrite
+    OrderByLogicalOperator *order_logical_oper =
+        static_cast<OrderByLogicalOperator *>(logical_oper.children().front().get());
+    unique_ptr<PhysicalOperator> physical_oper = make_unique<OrderByLimitVecPhysicalOperator>(
+        std::move(order_logical_oper->order_by_exprs()), std::move(order_logical_oper->asc()), logical_oper.n());
+    ASSERT(order_logical_oper->children().size() == 1, "oredr by operator should have 1 child");
+    unique_ptr<PhysicalOperator> child_physical_oper;
+    RC                           rc = create_vec(*order_logical_oper->children().front(), child_physical_oper, session);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to create child physical operator of order by(vec) operator. rc=%s", strrc(rc));
+      return rc;
+    }
+    physical_oper->add_child(std::move(child_physical_oper));
+    oper = std::move(physical_oper);
+    return RC::SUCCESS;
+  }
   unique_ptr<PhysicalOperator> physical_oper = make_unique<LimitVecPhysicalOperator>(logical_oper.n());
   ASSERT(logical_oper.children().size() == 1, "limit operator should have 1 child");
   LogicalOperator             &child_oper = *logical_oper.children().front();
