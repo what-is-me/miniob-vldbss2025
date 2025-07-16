@@ -44,6 +44,7 @@ private:
   RC create_plan(ExplainStmt *explain_stmt, unique_ptr<LogicalOperator> &logical_operator);
 
   RC create_group_by_plan(SelectStmt *select_stmt, unique_ptr<LogicalOperator> &logical_operator);
+  RC bind_order_by_plan(SelectStmt *select_stmt);
 
   int implicit_cast_cost(AttrType from, AttrType to);
 };

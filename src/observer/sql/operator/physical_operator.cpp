@@ -34,7 +34,12 @@ string physical_operator_type_name(PhysicalOperatorType type)
     case PhysicalOperatorType::PROJECT_VEC: return "PROJECT_VEC";
     case PhysicalOperatorType::TABLE_SCAN_VEC: return "TABLE_SCAN_VEC";
     case PhysicalOperatorType::EXPR_VEC: return "EXPR_VEC";
-    default: return "UNKNOWN";
+    case PhysicalOperatorType::PREDICATE_VEC: return "PREDICATE_VEC";
+    case PhysicalOperatorType::CALC: return "CALC";
+    case PhysicalOperatorType::ORDER_BY_VEC: return "ORDER_BY_VEC";
+    case PhysicalOperatorType::LIMIT_VEC: return "LIMIT_VEC";
+    case PhysicalOperatorType::ORDER_BY_LIMIT_VEC: return "ORDER_BY_LIMIT_VEC";
+    default: return "UNKNOWN";    
   }
 }
 

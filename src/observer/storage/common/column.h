@@ -93,6 +93,13 @@ public:
     return RC::SUCCESS;
   }
 
+  void limit(int limitation)
+  {
+    if (count_ > limitation) {
+      count_ = limitation;
+    }
+  }
+
   /**
    * @brief 获取列数据的实际大小（字节）
    */
