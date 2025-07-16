@@ -25,6 +25,7 @@ See the Mulan PSL v2 for more details. */
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace common;
@@ -474,6 +475,38 @@ RC PaxRecordPageHandler::insert_record(const char *data, RID *rid)
   return RC::SUCCESS;
 }
 
+class GlobalLobFileHandler
+{
+public:
+  GlobalLobFileHandler() {}
+  virtual ~GlobalLobFileHandler()
+  {
+    if (opened) {
+      lob_file_handler.close_file();
+    }
+  }
+  static LobFileHandler &get()
+  {
+    static GlobalLobFileHandler lb;
+    if (!lb.opened) {
+      const std::string file_name = "text_output";
+      if (lb.lob_file_handler.open_file(file_name.c_str()) == RC::FILE_NOT_EXIST) {
+        auto res = lb.lob_file_handler.create_file(file_name.c_str());
+        if (res != RC::SUCCESS) {
+          LOG_ERROR("Failed to create lob file.");
+          throw std::runtime_error("Failed to create lob file.");
+        }
+      }
+      lb.opened = true;
+    }
+    return lb.lob_file_handler;
+  }
+
+private:
+  bool           opened{false};
+  LobFileHandler lob_file_handler;
+};
+
 RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &insert_rows)
 {
   const int rows_to_insert    = chunk.rows() - start_row;
@@ -498,19 +531,8 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
         // 若不是内联字符串，设置偏移量
         if (!str->is_inlined()) {
           ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
-          int64_t        offset = 0;
-          LobFileHandler lob_file_handler;
-          // 打开文件
-          if (lob_file_handler.open_file("text_output") == RC::FILE_NOT_EXIST) {
-            auto res = lob_file_handler.create_file("text_output");
-            if (res != RC::SUCCESS) {
-              LOG_ERROR("Failed to create lob file.");
-              return res;
-            }
-          }
-          lob_file_handler.insert_data(offset, str->size(), str->data());
-          // 关闭文件
-          lob_file_handler.close_file();
+          int64_t offset = 0;
+          GlobalLobFileHandler::get().insert_data(offset, str->size(), str->data());
           str->set_offset(offset);
         }
         chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
@@ -586,14 +608,9 @@ RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
         if (chunk.column(j).attr_type() == AttrType::TEXTS) {
           string_t str = *(string_t *)get_field_data(index, j);
           if (!str.is_inlined()) {
-            int64_t        offset = str.get_offset();
-            LobFileHandler lob_file_handler;
-            if (lob_file_handler.open_file("text_output") == RC::FILE_NOT_EXIST) {
-              return RC::FILE_NOT_EXIST;
-            }
-            str = chunk.column(j).get_vector_buffer()->empty_string(str.size());
-            lob_file_handler.get_data(offset, str.size(), str.get_noinline_ptr());
-            lob_file_handler.close_file();
+            int64_t offset = str.get_offset();
+            str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
+            GlobalLobFileHandler::get().get_data(offset, str.size(), str.get_noinline_ptr());
           }
           rc = column.append_one((char *)&str);
         } else {
