@@ -40,7 +40,7 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
       } else {
         // 如果解析失败，设置为非法值（比如0，或你可以定义错误处理）
         LOG_WARN("Invalid date string: %s", s);
-        throw std::invalid_argument("Invalid date string");
+        return RC::INVALID_ARGUMENT;
         result.value_.int_value_ = 0;
       }
       break;

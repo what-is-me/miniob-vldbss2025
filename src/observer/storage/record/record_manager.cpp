@@ -478,32 +478,14 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
 {
   const int rows_to_insert    = chunk.rows() - start_row;
   const int rows_left_in_page = page_header_->record_capacity - page_header_->record_num;
-  // RC        rc                = rows_to_insert <= rows_left_in_page ? RC::SUCCESS : RC::RECORD_NOMEM;
-  insert_rows = std::min(rows_to_insert, rows_left_in_page);
+  RC        rc                = rows_to_insert <= rows_left_in_page ? RC::SUCCESS : RC::RECORD_NOMEM;
+  insert_rows                 = std::min(rows_to_insert, rows_left_in_page);
   std::vector<char> record_buffer(page_header_->record_real_size);
   std::vector<int>  record_offsets(page_header_->column_num);
   for (int col_id = 0, record_offset = 0; col_id < page_header_->column_num; col_id++) {
     record_offsets[col_id] = record_offset;
     record_offset += get_field_len(col_id);
   }
-  // if (page_header_->record_num > 0) {
-  // for (int i = 0; i < insert_rows; ++i) {
-  //   const int row_id = i + start_row;
-  //   for (int j = 0; j < chunk.column_num(); ++j) {
-  //     const int col_id        = chunk.column_ids(j);
-  //     const int record_offset = record_offsets.at(col_id);
-  //     const int field_len     = get_field_len(col_id);
-  //     memcpy(record_buffer.data() + record_offset, chunk.get_value(col_id, row_id).data(), field_len);
-  //     Value value = (value*)record_buffer.data();
-  //   }
-  //   RC rc = insert_record(record_buffer.data(), nullptr);
-  //   if (OB_FAIL(rc)) {
-  //     LOG_ERROR("Failed to insert record. page_num %d:%d. rc=%s", disk_buffer_pool_->file_desc(), frame_->page_num(),
-  //     strrc(rc));
-  //   }
-  // }
-  // return rc;
-  // } else {
   Bitmap bitmap(bitmap_, page_header_->record_capacity);
   bitmap.set_bits(insert_rows);
   page_header_->record_num = insert_rows;
@@ -511,10 +493,8 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
     const int col_id = chunk.column_ids(j);
     // 判断该列是否是TEXTS且列中存在vector buffer
     if (chunk.column(j).attr_type() == AttrType::TEXTS && chunk.column(j).is_vector_buffer_null() == false) {
-      auto attr_len_dbg = chunk.column(j).attr_len();
       for (int i = start_row; i < start_row + insert_rows; ++i) {
-        // string_t *str = (string_t *)get_field_data(i, j);
-        string_t *str = (string_t *)(chunk.column(j).data() + i * attr_len_dbg);
+        string_t *str = ((string_t *)chunk.column(j).data()) + i;
         // 若不是内联字符串，设置偏移量
         if (!str->is_inlined()) {
           ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
@@ -525,7 +505,6 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
             auto res = lob_file_handler.create_file("text_output");
             if (res != RC::SUCCESS) {
               LOG_ERROR("Failed to create lob file.");
-              throw std::runtime_error("Failed to create lob file.");
               return res;
             }
           }
@@ -540,8 +519,7 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
       chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
     }
   }
-  return RC::SUCCESS;
-  // }
+  return rc;
 }
 
 RC PaxRecordPageHandler::delete_record(const RID *rid)
@@ -610,10 +588,9 @@ RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
             int64_t        offset = str.get_offset();
             LobFileHandler lob_file_handler;
             if (lob_file_handler.open_file("text_output") == RC::FILE_NOT_EXIST) {
-              throw std::runtime_error("Failed to open lob file.");
               return RC::FILE_NOT_EXIST;
             }
-            str = chunk.column(j).get_vector_buffer()->empty_string(str.size()); 
+            str = chunk.column(j).get_vector_buffer()->empty_string(str.size());
             lob_file_handler.get_data(offset, str.size(), str.get_noinline_ptr());
             lob_file_handler.close_file();
           }
