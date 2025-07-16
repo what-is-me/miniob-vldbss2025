@@ -766,56 +766,25 @@ RC RecordFileHandler::insert_chunk(const Chunk &chunk, int record_size)
 {
   unique_ptr<RecordPageHandler> record_page_handler(RecordPageHandler::create(storage_format_));
   auto                          find_empty_page = [this, record_size](RecordPageHandler *record_page_handler) {
-    RC      ret              = RC::SUCCESS;
-    bool    page_found       = false;
-    PageNum current_page_num = 0;
-
-    // 当前要访问free_pages对象，所以需要加锁。在非并发编译模式下，不需要考虑这个锁
-    lock_.lock();
-
-    // 找到没有填满的页面
-    while (!free_pages_.empty()) {
-      current_page_num = *free_pages_.begin();
-
-      ret = record_page_handler->init(*disk_buffer_pool_, *log_handler_, current_page_num, ReadWriteMode::READ_WRITE);
-      if (OB_FAIL(ret)) {
-        lock_.unlock();
-        LOG_WARN("failed to init record page handler. page num=%d, rc=%d:%s", current_page_num, ret, strrc(ret));
-        return ret;
-      }
-
-      if (record_page_handler->is_empty()) {
-        page_found = true;
-        break;
-      }
-      record_page_handler->cleanup();
-      free_pages_.erase(free_pages_.begin());
+    // 直接分配一个新的页面
+    RC     ret   = RC::SUCCESS;
+    Frame *frame = nullptr;
+    if ((ret = disk_buffer_pool_->allocate_page(&frame)) != RC::SUCCESS) {
+      LOG_ERROR("Failed to allocate page while inserting record. ret:%d", ret);
+      return ret;
     }
-    lock_.unlock();  // 如果找到了一个有效的页面，那么此时已经拿到了页面的写锁
-
-    // 找不到就分配一个新的页面
-    if (!page_found) {
-      Frame *frame = nullptr;
-      if ((ret = disk_buffer_pool_->allocate_page(&frame)) != RC::SUCCESS) {
-        LOG_ERROR("Failed to allocate page while inserting record. ret:%d", ret);
-        return ret;
-      }
-
-      current_page_num = frame->page_num();
-
-      ret = record_page_handler->init_empty_page(
-          *disk_buffer_pool_, *log_handler_, current_page_num, record_size, table_meta_, lob_handler_);
-      if (OB_FAIL(ret)) {
-        frame->unpin();
-        LOG_ERROR("Failed to init empty page. ret:%d", ret);
-        // this is for allocate_page
-        return ret;
-      }
+    PageNum current_page_num = frame->page_num();
+    ret = record_page_handler->init_empty_page(
+        *disk_buffer_pool_, *log_handler_, current_page_num, record_size, table_meta_, lob_handler_);
+    if (OB_FAIL(ret)) {
       frame->unpin();
-      lock_.lock();
-      free_pages_.insert(current_page_num);
-      lock_.unlock();
+      LOG_ERROR("Failed to init empty page. ret:%d", ret);
+      return ret;
     }
+    frame->unpin();
+    lock_.lock();
+    free_pages_.insert(current_page_num);
+    lock_.unlock();
     return ret;
   };
 
