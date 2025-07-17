@@ -47,9 +47,9 @@ RC DateType::cast_to(const Value &val, AttrType type, Value &result) const { ret
 
 int DateType::cast_cost(AttrType type)
 {
-  if (type == AttrType::CHARS) {
-    return 50;
-  }
+  // if (type == AttrType::CHARS) {
+  //   return 50;
+  // }
   return INT32_MAX;
 }
 

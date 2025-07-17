@@ -57,8 +57,11 @@ RC TextType::cast_to(const Value &val, AttrType type, Value &result) const
 
 int TextType::cast_cost(AttrType type)
 {
-  if (type == AttrType::CHARS || type == AttrType::DATES) {
+  if (type == AttrType::DATES) {
     return 0;
+  }
+  if (type == AttrType::CHARS) {
+    return 50;
   }
   return INT32_MAX;
 }
