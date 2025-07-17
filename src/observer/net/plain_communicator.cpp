@@ -15,10 +15,14 @@ See the Mulan PSL v2 for more details. */
 #include "net/plain_communicator.h"
 #include "common/io/io.h"
 #include "common/log/log.h"
+#include "common/types.h"
 #include "event/session_event.h"
 #include "net/buffered_writer.h"
 #include "session/session.h"
 #include "sql/expr/tuple.h"
+#include "storage/db/db.h"
+#include <cstddef>
+#include <vector>
 
 PlainCommunicator::PlainCommunicator()
 {
@@ -178,6 +182,16 @@ RC PlainCommunicator::write_result(SessionEvent *event, bool &need_disconnect)
   return rc;
 }
 
+bool isFirstWordCreate(const std::string &str)
+{
+  std::istringstream iss(str);
+  std::string        firstWord;
+  if (iss >> firstWord) {  // 提取第一个单词
+    return firstWord == "create";
+  }
+  return false;  // 空字符串
+}
+
 RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disconnect)
 {
   RC rc = RC::SUCCESS;
@@ -198,7 +212,11 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
   }
 
   const TupleSchema &schema   = sql_result->tuple_schema();
-  const int          cell_num = schema.cell_num();
+  int          cell_num = schema.cell_num();
+
+  if (isFirstWordCreate(event->query())) {
+    cell_num = 0;
+  }
 
   for (int i = 0; i < cell_num; i++) {
     const TupleCellSpec &spec  = schema.cell_at(i);
@@ -237,8 +255,7 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
   }
 
   rc = RC::SUCCESS;
-  if (event->session()->get_execution_mode() == ExecutionMode::CHUNK_ITERATOR
-      && event->session()->used_chunk_mode()) {
+  if (event->session()->get_execution_mode() == ExecutionMode::CHUNK_ITERATOR && event->session()->used_chunk_mode()) {
     rc = write_chunk_result(sql_result);
   } else {
     rc = write_tuple_result(sql_result);
@@ -272,7 +289,7 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
 
 RC PlainCommunicator::write_tuple_result(SqlResult *sql_result)
 {
-  RC rc = RC::SUCCESS;
+  RC     rc    = RC::SUCCESS;
   Tuple *tuple = nullptr;
   while (RC::SUCCESS == (rc = sql_result->next_tuple(tuple))) {
     assert(tuple != nullptr);
@@ -326,10 +343,34 @@ RC PlainCommunicator::write_tuple_result(SqlResult *sql_result)
 
 RC PlainCommunicator::write_chunk_result(SqlResult *sql_result)
 {
-  RC rc = RC::SUCCESS;
+  RC    rc = RC::SUCCESS;
   Chunk chunk;
   while (RC::SUCCESS == (rc = sql_result->next_chunk(chunk))) {
     int col_num = chunk.column_num();
+    if (chunk.table_name != "") {
+      std::vector<AttrInfoSqlNode> attr_vec;
+      string                       view_name = chunk.table_name;
+      for (int i = 0; i < col_num; i++) {
+        attr_vec.push_back({chunk.column(i).attr_type(),
+            "view_" + std::to_string(i),
+            static_cast<size_t>(chunk.column(i).attr_len())});
+      }
+      Db    *db         = session_->get_current_db();
+      Table *view_table = db->find_table(view_name.c_str());
+      if (view_table == nullptr) {
+        rc         = db->create_table(view_name.c_str(), attr_vec, vector<string>(), StorageFormat::PAX_FORMAT);
+        view_table = db->find_table(view_name.c_str());
+      }
+      if (OB_FAIL(rc)) {
+        LOG_WARN("failed to create new view err=%s", strerror(errno));
+        sql_result->close();
+        return rc;
+      }
+      view_table->insert_chunk(chunk);
+
+      chunk.reset();
+      continue;
+    }
     for (int row_idx = 0; row_idx < chunk.rows(); row_idx++) {
       for (int col_idx = 0; col_idx < col_num; col_idx++) {
         if (col_idx != 0) {

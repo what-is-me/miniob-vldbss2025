@@ -94,6 +94,8 @@ public:
 
   void reset();
 
+  string table_name;
+
 private:
   vector<unique_ptr<Column>> columns_;
   // TODO: remove it and support multi-tables,

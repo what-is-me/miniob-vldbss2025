@@ -2,6 +2,8 @@
 
 #include "common/log/log.h"
 #include "sql/operator/physical_operator.h"
+#include "storage/table/table.h"
+#include <memory>
 
 class CreateMaterializedViewPhysicalOperator : public PhysicalOperator
 {
@@ -47,7 +49,8 @@ public:
       LOG_WARN("failed to get next tuple: %s", strrc(rc));
       return rc;
     }
-    LOG_TRACE("column: %s", chunk.column_num());
+    LOG_TRACE("column: %d", chunk.column_num());
+    chunk.table_name = view_name_;
     return rc;
   }
   RC close() override
@@ -72,4 +75,5 @@ public:
 private:
   string view_name_;
   Chunk  chunk_;
+  std::unique_ptr<Table> table;
 };
