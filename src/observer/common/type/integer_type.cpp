@@ -50,7 +50,7 @@ RC IntegerType::cast_to(const Value &val, AttrType type, Value &result) const
     int64_t bigint_value = val.get_bigint();
     result.set_bigint(bigint_value);
     return RC::SUCCESS;
-  }
+  } break;
   default:
     LOG_WARN("unsupported type %d", type);
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;

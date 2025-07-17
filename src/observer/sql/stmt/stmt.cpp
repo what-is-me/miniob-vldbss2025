@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/analyze_table_stmt.h"
 #include "sql/stmt/calc_stmt.h"
 #include "sql/stmt/create_index_stmt.h"
+#include "sql/stmt/create_materialized_view_stmt.h"
 #include "sql/stmt/create_table_stmt.h"
 #include "sql/stmt/delete_stmt.h"
 #include "sql/stmt/desc_table_stmt.h"
@@ -111,6 +112,10 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
 
     case SCF_CALC: {
       return CalcStmt::create(sql_node.calc, stmt);
+    }
+
+    case SCF_CREATE_MATERIALIZED_VIEW: {
+      return CreateMaterializedViewStmt::create(db, sql_node.create_materialized_view, stmt);
     }
 
     default: {
