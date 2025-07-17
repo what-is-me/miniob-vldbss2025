@@ -37,5 +37,7 @@ private:
   unique_ptr<AggregateHashTable>          hash_table_;
   unique_ptr<AggregateHashTable::Scanner> hash_table_scanner_;
   Chunk                                   output_chunk_;
-  bool                                    need_encode_{false};
+#ifdef USE_SIMD
+  bool need_encode_{false};
+#endif
 };
