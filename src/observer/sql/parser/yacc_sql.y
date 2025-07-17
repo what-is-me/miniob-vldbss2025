@@ -77,6 +77,9 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         CALC
         SELECT
         DESC
+        VIEW
+        AS
+        MATERIALIZED
         SHOW
         SYNC
         INSERT
@@ -186,6 +189,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <sql_node>            update_stmt
 %type <sql_node>            delete_stmt
 %type <sql_node>            create_table_stmt
+%type <sql_node>            create_materialized_view_stmt
 %type <sql_node>            drop_table_stmt
 %type <sql_node>            analyze_table_stmt
 %type <sql_node>            show_tables_stmt
@@ -224,6 +228,7 @@ command_wrapper:
   | update_stmt
   | delete_stmt
   | create_table_stmt
+  | create_materialized_view_stmt
   | drop_table_stmt
   | analyze_table_stmt
   | show_tables_stmt
@@ -319,6 +324,22 @@ drop_index_stmt:      /*drop index 语句的语法解析树*/
       $$ = new ParsedSqlNode(SCF_DROP_INDEX);
       $$->drop_index.index_name = $3;
       $$->drop_index.relation_name = $5;
+    }
+    ;
+create_materialized_view_stmt:
+    CREATE VIEW ID AS select_stmt
+    {
+        $$ = new ParsedSqlNode(SCF_CREATE_MATERIALIZED_VIEW);
+        CreateMaterializedViewSqlNode &create_view = $$->create_materialized_view;
+        create_view.view_name = $3;
+        create_view.select_sql_node.reset(($5));
+    }
+    | CREATE MATERIALIZED VIEW ID AS select_stmt
+    {
+        $$ = new ParsedSqlNode(SCF_CREATE_MATERIALIZED_VIEW);
+        CreateMaterializedViewSqlNode &create_view = $$->create_materialized_view;
+        create_view.view_name = $4;
+        create_view.select_sql_node.reset(($6));
     }
     ;
 create_table_stmt:    /*create table 语句的语法解析树*/

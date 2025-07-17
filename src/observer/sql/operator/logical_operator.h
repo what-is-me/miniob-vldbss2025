@@ -40,8 +40,9 @@ enum class LogicalOperatorType
   DELETE,      ///< 删除，删除可能会有子查询
   EXPLAIN,     ///< 查看执行计划
   GROUP_BY,    ///< 分组
-  ORDER_BY,
-  LIMIT,
+  ORDER_BY,    ///< 排序
+  LIMIT,       ///< 限制返回的条数
+  MATERIALIZED_VIEW_CREATE, ///< 创建物化视图
 };
 
 /**

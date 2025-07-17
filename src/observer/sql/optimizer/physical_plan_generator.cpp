@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "common/log/log.h"
+#include "common/sys/rc.h"
 #include "sql/expr/expression.h"
 #include "session/session.h"
 #include "sql/operator/aggregate_vec_physical_operator.h"
@@ -50,6 +51,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/table_scan_vec_physical_operator.h"
 #include <memory>
 #include "sql/optimizer/physical_plan_generator.h"
+#include "sql/operator/create_materialized_view_physical_operator.h"
+#include "sql/operator/create_materialized_view_logic_operator.h"
 
 using namespace std;
 
@@ -127,11 +130,43 @@ RC PhysicalPlanGenerator::create_vec(
     case LogicalOperatorType::LIMIT: {
       return create_vec_plan(static_cast<LimitLogicalOperator &>(logical_operator), oper, session);
     } break;
+    case LogicalOperatorType::MATERIALIZED_VIEW_CREATE: {
+      return create_vec_plan(static_cast<CreateMaterializedViewLogicalOperator &>(logical_operator), oper, session);
+    } break;
     default: {
       LOG_WARN("unknown logical operator type: %d", logical_operator.type());
       return RC::INVALID_ARGUMENT;
     }
   }
+  return rc;
+}
+
+RC PhysicalPlanGenerator::create_vec_plan(
+    CreateMaterializedViewLogicalOperator &create_view_operator, unique_ptr<PhysicalOperator> &oper, Session *session)
+{
+  vector<unique_ptr<LogicalOperator>> &child_opers = create_view_operator.children();
+
+  unique_ptr<PhysicalOperator> child_phy_oper;
+
+  RC rc = RC::SUCCESS;
+  if (!child_opers.empty()) {
+    LogicalOperator *child_oper = child_opers.front().get();
+    rc                          = create_vec(*child_oper, child_phy_oper, session);
+    if (rc != RC::SUCCESS) {
+      LOG_WARN("failed to create project logical operator's child physical operator. rc=%s", strrc(rc));
+      return rc;
+    }
+  }
+
+  auto curr_operator = make_unique<CreateMaterializedViewPhysicalOperator>(create_view_operator.view_name());
+
+  if(child_phy_oper != nullptr) {
+    curr_operator->add_child(std::move(child_phy_oper));
+  }
+
+  oper = std::move(curr_operator);
+
+  LOG_TRACE("create a create materialized view physical operator");
   return rc;
 }
 

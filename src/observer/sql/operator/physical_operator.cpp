@@ -39,6 +39,7 @@ string physical_operator_type_name(PhysicalOperatorType type)
     case PhysicalOperatorType::ORDER_BY_VEC: return "ORDER_BY_VEC";
     case PhysicalOperatorType::LIMIT_VEC: return "LIMIT_VEC";
     case PhysicalOperatorType::ORDER_BY_LIMIT_VEC: return "ORDER_BY_LIMIT_VEC";
+    case PhysicalOperatorType::CREATE_MATERIALIZED_VIEW: return "CREATE_MATERIALIZED_VIEW";
     default: return "UNKNOWN";    
   }
 }

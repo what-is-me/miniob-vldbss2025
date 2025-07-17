@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/sys/rc.h"
 #include "sql/operator/logical_operator.h"
 #include "sql/operator/physical_operator.h"
+#include "sql/operator/create_materialized_view_logic_operator.h"
 
 class Session;
 class TableGetLogicalOperator;
@@ -57,11 +58,12 @@ private:
   RC create_plan(CalcLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_plan(GroupByLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(ProjectLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
-  RC create_vec_plan(TableGetLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(GroupByLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
+  RC create_vec_plan(TableGetLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(ExplainLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(OrderByLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(LimitLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
+  RC create_vec_plan(CreateMaterializedViewLogicalOperator &logical_operator, unique_ptr<PhysicalOperator> &oper, Session *session);
 
   // TODO: remove this and add CBO rules
   bool can_use_hash_join(JoinLogicalOperator &logical_oper);
