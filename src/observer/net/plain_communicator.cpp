@@ -350,12 +350,14 @@ RC PlainCommunicator::write_chunk_result(SqlResult *sql_result)
     if (chunk.table_name != "") {
       std::vector<AttrInfoSqlNode> attr_vec;
       string                       view_name = chunk.table_name;
+      Db    *db         = session_->get_current_db();
+      Table *original_table_name = db->find_table(chunk.original_table_name.c_str());
+      auto col_name_vec = original_table_name->table_meta().field_metas();
       for (int i = 0; i < col_num; i++) {
         attr_vec.push_back({chunk.column(i).attr_type(),
-            "view_" + std::to_string(i),
+            (*col_name_vec)[i].name(),
             static_cast<size_t>(chunk.column(i).attr_len())});
       }
-      Db    *db         = session_->get_current_db();
       Table *view_table = db->find_table(view_name.c_str());
       if (view_table == nullptr) {
         rc         = db->create_table(view_name.c_str(), attr_vec, vector<string>(), StorageFormat::PAX_FORMAT);

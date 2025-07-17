@@ -103,7 +103,7 @@ RC LogicalPlanGenerator::create_plan(CreateMaterializedViewStmt *create_material
     return rc;
   }
 
-  logical_operator.reset(new CreateMaterializedViewLogicalOperator(create_materialized_view_stmt->view_name()));
+  logical_operator.reset(new CreateMaterializedViewLogicalOperator(create_materialized_view_stmt->view_name(), create_materialized_view_stmt->original_table_name()));
 
   logical_operator->add_child(std::move(select_logical_operator));
   

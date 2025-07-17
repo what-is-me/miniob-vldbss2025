@@ -8,7 +8,8 @@
 class CreateMaterializedViewPhysicalOperator : public PhysicalOperator
 {
 public:
-  CreateMaterializedViewPhysicalOperator(string view) { view_name_ = view; };
+  CreateMaterializedViewPhysicalOperator(string view, string original_table_name) { view_name_ = view; 
+  original_table_name_ = original_table_name;};
 
   ~CreateMaterializedViewPhysicalOperator() = default;
 
@@ -51,6 +52,7 @@ public:
     }
     LOG_TRACE("column: %d", chunk.column_num());
     chunk.table_name = view_name_;
+    chunk.original_table_name = original_table_name_;
     return rc;
   }
   RC close() override
@@ -74,6 +76,7 @@ public:
 
 private:
   string view_name_;
+  string original_table_name_;
   Chunk  chunk_;
   std::unique_ptr<Table> table;
 };

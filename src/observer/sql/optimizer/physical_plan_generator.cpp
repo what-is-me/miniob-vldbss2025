@@ -158,7 +158,7 @@ RC PhysicalPlanGenerator::create_vec_plan(
     }
   }
 
-  auto curr_operator = make_unique<CreateMaterializedViewPhysicalOperator>(create_view_operator.view_name());
+  auto curr_operator = make_unique<CreateMaterializedViewPhysicalOperator>(create_view_operator.view_name(), create_view_operator.original_table_name());
 
   if(child_phy_oper != nullptr) {
     curr_operator->add_child(std::move(child_phy_oper));

@@ -95,6 +95,7 @@ public:
   void reset();
 
   string table_name;
+  string original_table_name;
 
 private:
   vector<unique_ptr<Column>> columns_;

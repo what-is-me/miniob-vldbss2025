@@ -25,6 +25,8 @@ CreateMaterializedViewStmt(std::string view_name, std::unique_ptr<SelectStmt> se
 
   static RC create(Db *db, const CreateMaterializedViewSqlNode &create_materialized_view, Stmt *&stmt);
 
+  std::string original_table_name() const { return select_stmt_->tables()[0]->name(); }
+
 private:
   std::string view_name_;
   std::unique_ptr<SelectStmt> select_stmt_;
