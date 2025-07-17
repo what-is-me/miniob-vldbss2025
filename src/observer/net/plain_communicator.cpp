@@ -187,7 +187,7 @@ bool isFirstWordCreate(const std::string &str)
   std::istringstream iss(str);
   std::string        firstWord;
   if (iss >> firstWord) {  // 提取第一个单词
-    return firstWord == "create";
+    return firstWord == "create" || firstWord == "CREATE";
   }
   return false;  // 空字符串
 }
