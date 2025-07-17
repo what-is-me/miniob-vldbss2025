@@ -79,6 +79,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         DESC
         VIEW
         AS
+        MATERIALIZED
         SHOW
         SYNC
         INSERT
@@ -332,6 +333,13 @@ create_materialized_view_stmt:
         CreateMaterializedViewSqlNode &create_view = $$->create_materialized_view;
         create_view.view_name = $3;
         create_view.select_sql_node.reset(($5));
+    }
+    | CREATE MATERIALIZED VIEW ID AS select_stmt
+    {
+        $$ = new ParsedSqlNode(SCF_CREATE_MATERIALIZED_VIEW);
+        CreateMaterializedViewSqlNode &create_view = $$->create_materialized_view;
+        create_view.view_name = $4;
+        create_view.select_sql_node.reset(($6));
     }
     ;
 create_table_stmt:    /*create table 语句的语法解析树*/

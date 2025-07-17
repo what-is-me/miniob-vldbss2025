@@ -90,6 +90,7 @@ DESC                                    RETURN_TOKEN(DESC);
 CREATE                                  RETURN_TOKEN(CREATE);
 VIEW                                    RETURN_TOKEN(VIEW);
 AS                                      RETURN_TOKEN(AS);
+MATERIALIZED                            RETURN_TOKEN(MATERIALIZED);
 DROP                                    RETURN_TOKEN(DROP);
 TABLE                                   RETURN_TOKEN(TABLE);
 TABLES                                  RETURN_TOKEN(TABLES);
