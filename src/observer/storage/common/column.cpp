@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "common/type/attr_type.h"
 #include "common/type/string_t.h"
+#include "sql/parser/parse_defs.h"
 #include "storage/common/column.h"
 
 Column::Column(const FieldMeta &meta, size_t size)
@@ -68,19 +69,16 @@ void Column::init(AttrType attr_type, int attr_len, size_t capacity)
 
 void Column::init(const Value &value, size_t size)
 {
-  reset();
-  attr_type_ = value.attr_type();
-  attr_len_  = value.length();
-  if (attr_len_ == 0) {
-    data_    = new char[1];
-    data_[0] = '\0';
-  } else {
-    data_ = new char[attr_len_];
+  int attr_len;
+  switch (value.attr_type()) {
+    case AttrType::CHARS: {
+      attr_len = size;
+    } break;
+    default: attr_len = get_default_length(value.attr_type());
   }
-  count_    = size;
-  capacity_ = 1;
-  own_      = true;
-  memcpy(data_, value.data(), attr_len_);
+  init(value.attr_type(), attr_len, 1);
+  append_value(value);
+  count_       = size;
   column_type_ = Type::CONSTANT_COLUMN;
 }
 
