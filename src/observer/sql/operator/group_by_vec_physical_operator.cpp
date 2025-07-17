@@ -126,10 +126,12 @@ RC GroupByVecPhysicalOperator::open(Trx *trx)
       // output_column(*column);
       aggrs_chunk.add_column(std::move(column), i);
     }
-    rc = hash_table_->add_chunk(groups_chunk, aggrs_chunk);
-    if (OB_FAIL(rc)) {
-      LOG_INFO("failed to update aggregate state. rc=%s", strrc(rc));
-      return rc;
+    if (groups_chunk.rows() > 0) {
+      rc = hash_table_->add_chunk(groups_chunk, aggrs_chunk);
+      if (OB_FAIL(rc)) {
+        LOG_INFO("failed to update aggregate state. rc=%s", strrc(rc));
+        return rc;
+      }
     }
   }
   if (rc != RC::RECORD_EOF) {
@@ -160,6 +162,7 @@ RC GroupByVecPhysicalOperator::next(Chunk &chunk)
 
 RC GroupByVecPhysicalOperator::close()
 {
+  children_.at(0)->close();
   hash_table_scanner_->close_scan();
   return RC::SUCCESS;
 }

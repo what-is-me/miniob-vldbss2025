@@ -30,7 +30,29 @@ RC TextType::set_value_from_str(Value &val, const string &data) const
 
 RC TextType::cast_to(const Value &val, AttrType type, Value &result) const
 {
-  return RC::UNSUPPORTED;
+  switch (type) {
+    case AttrType::DATES: {
+      result.attr_type_ = type;
+      result.length_    = 4;
+      const char *s     = val.value_.pointer_value_;
+
+      int year, month, day;
+      // 使用 sscanf 解析日期字符串
+      if (sscanf(s, "%d-%d-%d", &year, &month, &day) == 3) {
+        result.value_.int_value_ = year * 10000 + month * 100 + day;
+      } else {
+        // 如果解析失败，设置为非法值（比如0，或你可以定义错误处理）
+        LOG_WARN("Invalid date string: %s", s);
+        return RC::INVALID_ARGUMENT;
+        result.value_.int_value_ = 0;
+      }
+    } break;
+    case AttrType::CHARS: {
+      result.set_string(val.value_.pointer_value_, val.length_);
+    } break;
+    default: return RC::UNIMPLEMENTED;
+  }
+  return RC::SUCCESS;
 }
 
 int TextType::cast_cost(AttrType type)

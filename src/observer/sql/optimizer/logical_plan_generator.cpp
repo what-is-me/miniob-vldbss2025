@@ -397,9 +397,10 @@ RC LogicalPlanGenerator::bind_order_by_plan(SelectStmt *select_stmt)
       if (order_by_expr->equal(*expr)) {
         order_by_expr->set_pos(i);
         return RC::SUCCESS;
-      } else {
-        rc = ExpressionIterator::iterate_child_expr(*expr, bind_order_by_expr);
       }
+      // else {
+      //   rc = ExpressionIterator::iterate_child_expr(*expr, bind_order_by_expr);
+      // }
     }
     return rc;
   };

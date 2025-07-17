@@ -31,7 +31,9 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
 {
   switch (type) {
     case AttrType::DATES: {
-      const char *s = val.value_.pointer_value_;
+      result.attr_type_ = type;
+      result.length_    = 4;
+      const char *s     = val.value_.pointer_value_;
 
       int year, month, day;
       // 使用 sscanf 解析日期字符串
@@ -43,8 +45,7 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
         return RC::INVALID_ARGUMENT;
         result.value_.int_value_ = 0;
       }
-      break;
-    }
+    } break;
     case AttrType::TEXTS: {
       result.set_text(val.value_.pointer_value_, val.length_);
     } break;
@@ -55,7 +56,7 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
 
 int CharType::cast_cost(AttrType type)
 {
-  if (type == AttrType::CHARS || type == AttrType::DATES) {
+  if (type == AttrType::CHARS || type == AttrType::TEXTS || type == AttrType::DATES) {
     return 0;
   }
   return INT32_MAX;
