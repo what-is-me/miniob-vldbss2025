@@ -359,7 +359,7 @@ private:
 inline int get_default_length(AttrType type)
 {
   switch (type) {
-    case AttrType::CHARS: return 4;
+    case AttrType::CHARS: return 0;
     case AttrType::BIGINTS: return 8;
     case AttrType::DATES: return 4;
     case AttrType::TEXTS: return 16;
