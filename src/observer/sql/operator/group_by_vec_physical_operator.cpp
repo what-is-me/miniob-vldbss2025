@@ -74,7 +74,7 @@ GroupByVecPhysicalOperator::GroupByVecPhysicalOperator(
 #endif
 }
 
-static std::unique_ptr<Column> encode(const Column &column)
+[[maybe_unused]] static std::unique_ptr<Column> encode(const Column &column)
 {
   std::unique_ptr<Column> res      = std::make_unique<Column>(AttrType::INTS, sizeof(int));
   const int               rows     = column.count();
@@ -109,15 +109,20 @@ RC GroupByVecPhysicalOperator::open(Trx *trx)
   }
   Chunk chunk;
   while (OB_SUCC(rc = child.next(chunk))) {
+    if (chunk.rows() == 0) {
+      continue;
+    }
     Chunk groups_chunk, aggrs_chunk;
     for (int i = 0; i < group_by_exprs_.size(); ++i) {
       std::unique_ptr<Column> column = std::make_unique<Column>();
       group_by_exprs_[i]->get_column(chunk, *column);
-      // output_column(*column);
+// output_column(*column);
+#ifdef USE_SIMD
       if (need_encode_) {
         column = encode(*column);
         // output_column(*column);
       }
+#endif
       groups_chunk.add_column(std::move(column), i);
     }
     for (int i = 0; i < aggregate_expressions_.size(); ++i) {
@@ -133,6 +138,7 @@ RC GroupByVecPhysicalOperator::open(Trx *trx)
         return rc;
       }
     }
+    chunk.reset();
   }
   if (rc != RC::RECORD_EOF) {
     LOG_INFO("failed to update aggregate state. rc=%s", strrc(rc));
@@ -144,7 +150,7 @@ RC GroupByVecPhysicalOperator::open(Trx *trx)
 
 RC GroupByVecPhysicalOperator::next(Chunk &chunk)
 {
-  chunk.reset();
+#ifdef USE_SIMD
   if (need_encode_) {
     chunk.add_column(std::make_unique<Column>(AttrType::INTS, sizeof(int)), 0);
     chunk.add_column(
@@ -153,11 +159,13 @@ RC GroupByVecPhysicalOperator::next(Chunk &chunk)
     chunk.column(0).set_attr_type(AttrType::CHARS);
     return rc;
   }
-  for (int i = 0; i < output_chunk_.column_num(); ++i) {
-    chunk.add_column(std::make_unique<Column>(output_chunk_.column(i).attr_type(), output_chunk_.column(i).attr_len()),
-        output_chunk_.column_ids(i));
+#endif
+  output_chunk_.reset_data();
+  RC rc = hash_table_scanner_->next(output_chunk_);
+  if (OB_FAIL(rc)) {
+    return rc;
   }
-  return hash_table_scanner_->next(chunk);
+  return chunk.reference(output_chunk_);
 }
 
 RC GroupByVecPhysicalOperator::close()

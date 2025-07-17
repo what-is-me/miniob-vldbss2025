@@ -111,7 +111,7 @@ RC CastExpr::get_column(Chunk &chunk, Column &column)
   if (rc != RC::SUCCESS) {
     return rc;
   }
-  column.init(cast_type_, std::max((child_column.attr_len()), get_default_length(cast_type_)));
+  column.init(cast_type_, get_default_length(cast_type_));
   for (int i = 0; i < child_column.count(); ++i) {
     Value value = child_column.get_value(i);
     Value cast_value;

@@ -93,6 +93,8 @@ RC aggregate_state_update_by_value(void *state, AggregateExpr::Type aggr_type, A
       static_cast<SumState<int> *>(state)->update(val.get_int());
     } else if (attr_type == AttrType::FLOATS) {
       static_cast<SumState<float> *>(state)->update(val.get_float());
+    } else if (attr_type == AttrType::BIGINTS) {
+      static_cast<SumState<int64_t> *>(state)->update(val.get_bigint());
     } else {
       LOG_WARN("unsupported aggregate value type");
       return RC::UNIMPLEMENTED;
@@ -104,6 +106,8 @@ RC aggregate_state_update_by_value(void *state, AggregateExpr::Type aggr_type, A
       static_cast<AvgState<int> *>(state)->update(val.get_int());
     } else if (attr_type == AttrType::FLOATS) {
       static_cast<AvgState<float> *>(state)->update(val.get_float());
+    } else if (attr_type == AttrType::BIGINTS) {
+      static_cast<AvgState<int64_t> *>(state)->update(val.get_bigint());
     } else {
       LOG_WARN("unsupported aggregate value type");
       return RC::UNIMPLEMENTED;

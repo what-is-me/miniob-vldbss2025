@@ -34,10 +34,10 @@ public:
 
   int cast_cost(const AttrType type) override
   {
-    if (type == AttrType::BIGINTS || type == AttrType::INTS) {
+    if (type == AttrType::BIGINTS) {
       return 0;
-    } else if (type == AttrType::FLOATS) {
-      return 1;
+    } else if (type == AttrType::FLOATS || type == AttrType::INTS) {
+      return 3;
     }
     return INT32_MAX;
   }
