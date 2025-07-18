@@ -3,10 +3,7 @@
 #include "common/value.h"
 #include "storage/common/chunk.h"
 #include "storage/common/column.h"
-#include <cstdint>
 #include <queue>
-#include <string>
-#include <variant>
 #include <vector>
 namespace __order_by {
 using OrderKey = std::vector<Value>;
@@ -58,12 +55,10 @@ inline Row fetch_row(int rid, Chunk &chunk, std::vector<std::unique_ptr<Column>>
   row.first.reserve(chunk.column_num());
   row.second.reserve(order_key_cols.size());
   for (int i = 0; i < chunk.column_num(); ++i) {
-    const Value value = chunk.get_value(i, rid);
-    row.first.emplace_back(value);
+    row.first.emplace_back(chunk.get_value(i, rid));
   }
   for (int i = 0; i < order_key_cols.size(); ++i) {
-    const Value value = order_key_cols.at(i)->get_value(rid);
-    row.second.emplace_back(value);
+    row.second.emplace_back(order_key_cols.at(i)->get_value(rid));
   }
   return row;
 }
@@ -100,3 +95,41 @@ inline RC append_chunk(Chunk &chunk, std::vector<Value> &&row)
 }
 
 }  // namespace __order_by
+
+namespace __order_by_count {
+using Row = std::pair<int, std::vector<Value>>;
+struct Comp
+{
+  bool operator()(const Row &a, const Row &b) const { return a.first > b.first; }
+};
+using RowHeap = std::priority_queue<Row, std::vector<Row>, Comp>;
+inline void append_rows_limit(RowHeap &rows, Chunk &chunk, Column &count_star, int limitation)
+{
+  for (int rid = 0; rid < chunk.rows(); ++rid) {
+    Row row;
+    row.second.reserve(chunk.rows());
+    for (int i = 0; i < chunk.column_num(); ++i) {
+      row.second.emplace_back(chunk.get_value(i, rid));
+      row.first = *count_star.data_at<int>(rid);
+    }
+    rows.push(std::move(row));
+    if (rows.size() > limitation) {
+      rows.pop();
+    }
+  }
+}
+inline void append_chunk(Chunk &chunk, RowHeap &row_heap)
+{
+  std::vector<std::vector<Value>> stk;
+  stk.reserve(row_heap.size());
+  while (!row_heap.empty()) {
+    stk.emplace_back(std::move(row_heap.top().second));
+    row_heap.pop();
+  }
+  for (auto iter = stk.rbegin(); iter != stk.rend(); ++iter) {
+    for (int i = 0; i < chunk.column_num(); ++i) {
+      chunk.column(i).append_value(std::move(iter->at(i)));
+    }
+  }
+}
+}  // namespace __order_by_count

@@ -23,5 +23,6 @@ private:
   vector<bool>                   asc_;
   int                            n_;
   __order_by::RowHeap            rows_;
+  __order_by_count::RowHeap      rows2_;
   Chunk                          chunk_;
 };
