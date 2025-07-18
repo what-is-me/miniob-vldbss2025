@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/type/string_t.h"
 #include "common/value.h"
 #include "sql/parser/parse_defs.h"
+#include <cstring>
 #include "storage/common/column.h"
 
 Column::Column(const FieldMeta &meta, size_t size)
@@ -196,4 +197,23 @@ void Column::reference(const Column &column)
   this->column_type_ = column.column_type();
   this->attr_type_   = column.attr_type();
   this->attr_len_    = column.attr_len();
+}
+
+void Column::compress(const std::vector<uint8_t> &selection)
+{
+  count_ = 0;
+  if (attr_type_ == AttrType::UNDEFINED || column_type_ == Type::CONSTANT_COLUMN) {
+    for (auto flag : selection) {
+      count_ += flag;
+    }
+  } else {
+    for (int index = 0; index < selection.size(); ++index) {
+      if (selection[index]) {
+        if (count_ != index) {
+          memcpy(data_ + count_ * attr_len_, data_ + index * attr_len_, attr_len_);
+        }
+        ++count_;
+      }
+    }
+  }
 }

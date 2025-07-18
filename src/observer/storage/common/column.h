@@ -10,8 +10,10 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string.h>
+#include <vector>
 
 #include "storage/field/field_meta.h"
 #include "storage/common/vector_buffer.h"
@@ -79,8 +81,13 @@ public:
   /**
    * 填充空列，值不会被访问，但是有大小
    */
-  void resize_empty(int count) {
+  void resize_empty(int count)
+  {
     reset();
+    resize(count);
+  }
+
+  void resize(int count) {
     count_ = count;
   }
 
@@ -138,13 +145,16 @@ public:
 
   VectorBuffer *get_vector_buffer();
 
-  bool is_vector_buffer_null() const { return vector_buffer_ == nullptr;}
+  bool is_vector_buffer_null() const { return vector_buffer_ == nullptr; }
 
-  int                     count() const { return count_; }
-  int                     capacity() const { return capacity_; }
-  AttrType                attr_type() const { return attr_type_; }
-  int                     attr_len() const { return attr_len_; }
-  Type                    column_type() const { return column_type_; }
+  int      count() const { return count_; }
+  int      capacity() const { return capacity_; }
+  AttrType attr_type() const { return attr_type_; }
+  int      attr_len() const { return attr_len_; }
+  Type     column_type() const { return column_type_; }
+  void     compress(const std::vector<uint8_t> &selection);
+  bool     own() const { return own_; }
+
   static constexpr size_t DEFAULT_CAPACITY = 8192;
 
 private:

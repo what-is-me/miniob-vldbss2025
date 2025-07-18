@@ -55,7 +55,6 @@ private:
   ReadWriteMode                  mode_  = ReadWriteMode::READ_WRITE;
   ChunkFileScanner               chunk_scanner_;
   Chunk                          all_columns_;
-  Chunk                          filterd_columns_;
   vector<uint8_t>                select_;
   vector<unique_ptr<Expression>> predicates_;
   unordered_set<int>             cols_need_to_read_;
