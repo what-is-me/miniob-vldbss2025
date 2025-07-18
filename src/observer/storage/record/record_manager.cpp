@@ -22,8 +22,12 @@ See the Mulan PSL v2 for more details. */
 #include "storage/record/lob_handler.h"
 #include "storage/trx/trx.h"
 #include "storage/clog/log_handler.h"
+#include <array>
 #include <cstring>
+#include <filesystem>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -477,34 +481,49 @@ RC PaxRecordPageHandler::insert_record(const char *data, RID *rid)
 
 class GlobalLobFileHandler
 {
+  struct alignas(64) WarpedLobFileHandler
+  {
+    bool           opened{false};
+    LobFileHandler lob_file_handler{};
+  };
+
 public:
   GlobalLobFileHandler() {}
   virtual ~GlobalLobFileHandler()
   {
-    if (opened) {
-      lob_file_handler.close_file();
+    for (auto &slot : handlers_) {
+      if (slot.opened) {
+        slot.lob_file_handler.close_file();
+      }
     }
   }
-  static LobFileHandler &get()
+  static LobFileHandler &get(size_t col_id)
   {
     static GlobalLobFileHandler lb;
-    if (!lb.opened) {
-      const std::string file_name = "text_output";
-      if (lb.lob_file_handler.open_file(file_name.c_str()) == RC::FILE_NOT_EXIST) {
-        auto res = lb.lob_file_handler.create_file(file_name.c_str());
+    auto                       &slot = lb.handlers_.at(col_id);
+    if (!slot.opened) {
+      std::lock_guard<std::mutex> lg(lb.mu_);
+      const std::string           lob_dir = "lobs";
+      if (!std::filesystem::exists(lob_dir)) {
+        std::filesystem::create_directory(lob_dir);
+      }
+      const std::string file_name = lob_dir + "/" + std::to_string(col_id) + ".lob";
+      if (slot.lob_file_handler.open_file(file_name.c_str()) == RC::FILE_NOT_EXIST) {
+        auto res = slot.lob_file_handler.create_file(file_name.c_str());
         if (res != RC::SUCCESS) {
           LOG_ERROR("Failed to create lob file.");
           throw std::runtime_error("Failed to create lob file.");
         }
       }
-      lb.opened = true;
+      slot.opened = true;
     }
-    return lb.lob_file_handler;
+    return slot.lob_file_handler;
   }
 
 private:
-  bool           opened{false};
-  LobFileHandler lob_file_handler;
+  inline static constexpr size_t                   MAX_COLUMN_CNT = 128;  // clickbench has 105 cols
+  std::array<WarpedLobFileHandler, MAX_COLUMN_CNT> handlers_{};
+  std::mutex                                       mu_;
 };
 
 RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &insert_rows)
@@ -522,24 +541,32 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
   Bitmap bitmap(bitmap_, page_header_->record_capacity);
   bitmap.set_bits(insert_rows);
   page_header_->record_num = insert_rows;
+  std::vector<std::future<RC>> async_results;
   for (int j = 0; j < chunk.column_num(); ++j) {
-    const int col_id = chunk.column_ids(j);
-    // 判断该列是否是TEXTS且列中存在vector buffer
-    if (chunk.column(j).attr_type() == AttrType::TEXTS && chunk.column(j).is_vector_buffer_null() == false) {
-      for (int i = start_row; i < start_row + insert_rows; ++i) {
-        string_t *str = ((string_t *)chunk.column(j).data()) + i;
-        // 若不是内联字符串，设置偏移量
-        if (!str->is_inlined()) {
-          ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
-          int64_t offset = 0;
-          GlobalLobFileHandler::get().insert_data(offset, str->size(), str->data());
-          str->set_offset(offset);
+    async_results.emplace_back(std::async([start_row, insert_rows, j, this, &chunk]() {
+      const int col_id = chunk.column_ids(j);
+      // 判断该列是否是TEXTS且列中存在vector buffer
+      if (chunk.column(j).attr_type() == AttrType::TEXTS && !chunk.column(j).is_vector_buffer_null()) {
+        for (int i = start_row; i < start_row + insert_rows; ++i) {
+          string_t *str = ((string_t *)chunk.column(j).data()) + i;
+          // 若不是内联字符串，设置偏移量
+          if (!str->is_inlined()) {
+            ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
+            
+            int64_t offset = 0;
+            GlobalLobFileHandler::get(col_id).insert_data(offset, str->size(), str->data());
+            str->set_offset(offset);
+          }
+          chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
         }
-        chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
+      } else {
+        chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
       }
-    } else {
-      chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
-    }
+      return RC::SUCCESS;
+    }));
+  }
+  for (auto &res : async_results) {
+    res.wait();
   }
   frame_->mark_dirty();
   return rc;
@@ -596,35 +623,50 @@ RC PaxRecordPageHandler::get_record(const RID &rid, Record &record)
 RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
 {
   chunk.reset_data();
-  RC     rc = RC::SUCCESS;
-  Bitmap bitmap(bitmap_, page_header_->record_capacity);
-  bool   fulfilled = page_header_->record_num == page_header_->record_capacity;
+  Bitmap                       bitmap(bitmap_, page_header_->record_capacity);
+  bool                         fulfilled = page_header_->record_num == page_header_->record_capacity;
+  std::vector<std::future<RC>> async_results;
   for (int j = 0; j < chunk.column_num(); ++j) {
     const int col_id = chunk.column_ids(j);
-    Column   &column = chunk.column(j);
-    if (!fulfilled || chunk.column(j).attr_type() == AttrType::TEXTS) {
-      for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
-        index = bitmap.next_setted_bit(index);
-        if (chunk.column(j).attr_type() == AttrType::TEXTS) {
-          string_t str = *(string_t *)get_field_data(index, j);
-          if (!str.is_inlined()) {
-            int64_t offset = str.get_offset();
-            str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
-            GlobalLobFileHandler::get().get_data(offset, str.size(), str.get_noinline_ptr());
+    if (col_id == -1) {
+      chunk.column(j).resize_empty(page_header_->record_num);
+      continue;
+    }
+    async_results.emplace_back(std::async([j, fulfilled, col_id, this, &chunk, &bitmap]() {
+      RC      rc     = RC::SUCCESS;
+      Column &column = chunk.column(j);
+      if (!fulfilled || chunk.column(j).attr_type() == AttrType::TEXTS) {
+        for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
+          index = bitmap.next_setted_bit(index);
+          if (chunk.column(j).attr_type() == AttrType::TEXTS) {
+            string_t str = *(string_t *)get_field_data(index, j);
+            if (!str.is_inlined()) {
+              int64_t offset = str.get_offset();
+              str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
+              GlobalLobFileHandler::get(col_id).get_data(offset, str.size(), str.get_noinline_ptr());
+            }
+            rc = column.append_one((char *)&str);
+          } else {
+            rc = column.append_one(get_field_data(index, col_id));
           }
-          rc = column.append_one((char *)&str);
-        } else {
-          rc = column.append_one(get_field_data(index, col_id));
+          if (OB_FAIL(rc)) {
+            return rc;
+          }
         }
+      } else {
+        RC rc = column.append(get_field_data(0, col_id), page_header_->record_num);
         if (OB_FAIL(rc)) {
           return rc;
         }
       }
-    } else {
-      RC rc = column.append(get_field_data(0, col_id), page_header_->record_num);
-      if (OB_FAIL(rc)) {
-        return rc;
-      }
+      return RC::SUCCESS;
+    }));
+  }
+  for (auto &res : async_results) {
+    res.wait();
+    RC rc = res.get();
+    if (OB_FAIL(rc)) {
+      return rc;
     }
   }
   return RC::SUCCESS;

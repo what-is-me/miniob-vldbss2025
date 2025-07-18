@@ -11,6 +11,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "common/type/attr_type.h"
 #include "common/type/string_t.h"
+#include "common/value.h"
 #include "sql/parser/parse_defs.h"
 #include "storage/common/column.h"
 
@@ -134,6 +135,8 @@ RC Column::append_value(const Value &value)
       str = add_text(str.data(), str.size());
     }
     memcpy(data_ + count_ * attr_len_, &str, attr_len_);
+  } else if (attr_type_ == AttrType::UNDEFINED) {
+    // do nothing
   } else {
     const size_t total_bytes = std::min(value.length(), attr_len_);
     memcpy(data_ + count_ * attr_len_, value.data(), total_bytes);
@@ -165,6 +168,9 @@ Value Column::get_value(int index) const
     index = 0;
   }
   if (index >= count_ || index < 0) {
+    return Value();
+  }
+  if (attr_type_ == AttrType::UNDEFINED) {
     return Value();
   }
   if (attr_type_ == AttrType::TEXTS) {

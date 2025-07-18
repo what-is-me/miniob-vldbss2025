@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "sql/operator/table_scan_vec_physical_operator.h"
+#include "common/value.h"
 #include "event/sql_debug.h"
 #include "storage/table/table.h"
 
@@ -23,10 +24,14 @@ RC TableScanVecPhysicalOperator::open(Trx *trx)
   }
   // TODO: don't need to fetch all columns from record manager
   for (int i = 0; i < table_->table_meta().field_num(); ++i) {
-    all_columns_.add_column(
-        make_unique<Column>(*table_->table_meta().field(i)), table_->table_meta().field(i)->field_id());
-    filterd_columns_.add_column(
-        make_unique<Column>(*table_->table_meta().field(i)), table_->table_meta().field(i)->field_id());
+    int col_id = table_->table_meta().field(i)->field_id();
+    if (!cols_need_to_read_.contains(col_id)) {
+      all_columns_.add_column(make_unique<Column>(), -1);
+      filterd_columns_.add_column(make_unique<Column>(), -1);
+    } else {
+      all_columns_.add_column(make_unique<Column>(*table_->table_meta().field(i)), col_id);
+      filterd_columns_.add_column(make_unique<Column>(*table_->table_meta().field(i)), col_id);
+    }
   }
   return rc;
 }
@@ -53,8 +58,12 @@ RC TableScanVecPhysicalOperator::next(Chunk &chunk)
           continue;
         }
         for (int j = 0; j < all_columns_.column_num(); j++) {
-          filterd_columns_.column(j).append_value(
-              all_columns_.column(filterd_columns_.column_ids(j)).get_value(i));
+          const int col_id = filterd_columns_.column_ids(j);
+          if (col_id == -1) {
+            filterd_columns_.column(j).resize_empty(filterd_columns_.column(j).count() + 1);
+          } else {
+            filterd_columns_.column(j).append_value(all_columns_.column(col_id).get_value(i));
+          }
         }
       }
       chunk.reference(filterd_columns_);

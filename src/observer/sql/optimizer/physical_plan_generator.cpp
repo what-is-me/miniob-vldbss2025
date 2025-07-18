@@ -401,7 +401,7 @@ RC PhysicalPlanGenerator::create_vec_plan(
   vector<unique_ptr<Expression>> &predicates = table_get_oper.predicates();
   Table                          *table      = table_get_oper.table();
   TableScanVecPhysicalOperator   *table_scan_oper =
-      new TableScanVecPhysicalOperator(table, table_get_oper.read_write_mode());
+      new TableScanVecPhysicalOperator(table, table_get_oper.read_write_mode(), table_get_oper.get_cols_need_to_read());
   table_scan_oper->set_predicates(std::move(predicates));
   oper = unique_ptr<PhysicalOperator>(table_scan_oper);
   LOG_TRACE("use vectorized table scan");

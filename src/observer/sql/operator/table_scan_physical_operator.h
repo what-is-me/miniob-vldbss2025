@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/record/record_manager.h"
 #include "storage/record/record_scanner.h"
 #include "common/types.h"
+#include <vector>
 
 class Table;
 
@@ -67,6 +68,13 @@ public:
 
   int table_id() const { return table_->table_id(); }
 
+  unordered_set<int> &get_cols_need_to_read() { return cols_need_to_read_; }
+
+  void set_cols_need_to_read(unordered_set<int> &&cols_need_to_read)
+  {
+    cols_need_to_read_ = std::move(cols_need_to_read);
+  }
+
   void set_predicates(vector<unique_ptr<Expression>> &&exprs);
 
 private:
@@ -79,5 +87,6 @@ private:
   RecordScanner                 *record_scanner_;
   Record                         current_record_;
   RowTuple                       tuple_;
+  unordered_set<int>             cols_need_to_read_;
   vector<unique_ptr<Expression>> predicates_;  // TODO chang predicate to table tuple filter
 };

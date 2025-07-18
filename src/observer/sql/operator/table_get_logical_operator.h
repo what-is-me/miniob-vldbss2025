@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/logical_operator.h"
 #include "storage/field/field.h"
 #include "common/types.h"
+#include <unordered_set>
 
 /**
  * @brief 表示从表中获取数据的算子
@@ -57,9 +58,17 @@ public:
   void set_predicates(vector<unique_ptr<Expression>> &&exprs);
   auto predicates() -> vector<unique_ptr<Expression>> & { return predicates_; }
 
+  void set_cols_need_to_read(unordered_set<int> &&cols_need_to_read)
+  {
+    cols_need_to_read_ = std::move(cols_need_to_read);
+  }
+
+  unordered_set<int> &get_cols_need_to_read() { return cols_need_to_read_; }
+
 private:
-  Table        *table_ = nullptr;
-  ReadWriteMode mode_  = ReadWriteMode::READ_WRITE;
+  Table             *table_ = nullptr;
+  ReadWriteMode      mode_  = ReadWriteMode::READ_WRITE;
+  unordered_set<int> cols_need_to_read_;
 
   // 与当前表相关的过滤操作，可以尝试在遍历数据时执行
   // 这里的表达式都是比较简单的比较运算，并且左右两边都是取字段表达式或值表达式

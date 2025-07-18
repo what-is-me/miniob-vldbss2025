@@ -95,6 +95,9 @@ RC LogicalPlanGenerator::create_plan(CalcStmt *calc_stmt, unique_ptr<LogicalOper
 
 RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<LogicalOperator> &logical_operator)
 {
+  std::unordered_map<const void *, std::unordered_set<int>> cols_need_to_read;
+  bind_cols_need_to_read(select_stmt, cols_need_to_read);
+
   unique_ptr<LogicalOperator> *last_oper = nullptr;
 
   unique_ptr<LogicalOperator> table_oper(nullptr);
@@ -110,6 +113,8 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   const vector<Table *> &tables = select_stmt->tables();
   for (Table *table : tables) {
     unique_ptr<LogicalOperator> table_get_oper(new TableGetLogicalOperator(table, ReadWriteMode::READ_ONLY));
+    static_cast<TableGetLogicalOperator *>(table_get_oper.get())
+        ->set_cols_need_to_read(std::move(cols_need_to_read[table]));
     if (table_oper == nullptr) {
       table_oper = std::move(table_get_oper);
     } else {
@@ -410,5 +415,42 @@ RC LogicalPlanGenerator::bind_order_by_plan(SelectStmt *select_stmt)
       return rc;
     }
   }
+  return RC::SUCCESS;
+}
+
+RC LogicalPlanGenerator::bind_cols_need_to_read(
+    SelectStmt *select_stmt, std::unordered_map<const void *, std::unordered_set<int>> &cols_need_to_read)
+{
+  if (select_stmt->filter_stmt()) {
+    for (auto *filter_unit : select_stmt->filter_stmt()->filter_units()) {
+      if (filter_unit->left().is_attr) {
+        auto &field = filter_unit->left().field;
+        cols_need_to_read[field.table()].insert(field.meta()->field_id());
+      }
+      if (filter_unit->right().is_attr) {
+        auto &field = filter_unit->right().field;
+        cols_need_to_read[field.table()].insert(field.meta()->field_id());
+      }
+    }
+  }
+  std::function<RC(unique_ptr<Expression> &)> get_field_in_exprs = [&cols_need_to_read, &get_field_in_exprs](
+                                                                       unique_ptr<Expression> &expr) -> RC {
+    if (expr->type() == ExprType::FIELD) {
+      auto *field_expr = static_cast<FieldExpr *>(expr.get());
+      auto &field      = field_expr->field();
+      cols_need_to_read[field.table()].insert(field.meta()->field_id());
+      return RC::SUCCESS;
+    }
+    return ExpressionIterator::iterate_child_expr(*expr, get_field_in_exprs);
+  };
+  std::for_each(select_stmt->query_expressions().begin(),
+      select_stmt->query_expressions().end(),
+      [&get_field_in_exprs](unique_ptr<Expression> &expression) { get_field_in_exprs(expression); });
+  std::for_each(select_stmt->group_by().begin(),
+      select_stmt->group_by().end(),
+      [&get_field_in_exprs](unique_ptr<Expression> &expression) { get_field_in_exprs(expression); });
+  std::for_each(select_stmt->order_by().first.begin(),
+      select_stmt->order_by().first.end(),
+      [&get_field_in_exprs](unique_ptr<Expression> &expression) { get_field_in_exprs(expression); });
   return RC::SUCCESS;
 }

@@ -17,6 +17,8 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/memory.h"
 #include "common/sys/rc.h"
 #include "common/type/attr_type.h"
+#include <unordered_map>
+#include <unordered_set>
 
 class Stmt;
 class CalcStmt;
@@ -26,6 +28,7 @@ class InsertStmt;
 class DeleteStmt;
 class ExplainStmt;
 class LogicalOperator;
+class Table;
 
 class LogicalPlanGenerator
 {
@@ -45,6 +48,7 @@ private:
 
   RC create_group_by_plan(SelectStmt *select_stmt, unique_ptr<LogicalOperator> &logical_operator);
   RC bind_order_by_plan(SelectStmt *select_stmt);
+  RC bind_cols_need_to_read(SelectStmt *select_stmt, std::unordered_map<const void *, std::unordered_set<int>> &cols_need_to_read);
 
   int implicit_cast_cost(AttrType from, AttrType to);
 };

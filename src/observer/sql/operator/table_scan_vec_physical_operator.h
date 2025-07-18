@@ -24,7 +24,16 @@ class Table;
 class TableScanVecPhysicalOperator : public PhysicalOperator
 {
 public:
-  TableScanVecPhysicalOperator(Table *table, ReadWriteMode mode) : table_(table), mode_(mode) {}
+  TableScanVecPhysicalOperator(Table *table, ReadWriteMode mode) : table_(table), mode_(mode)
+  {
+    for (int i = 0; i < table_->table_meta().field_num(); ++i) {
+      cols_need_to_read_.insert(table_->table_meta().field(i)->field_id());
+    }
+  }
+
+  TableScanVecPhysicalOperator(Table *table, ReadWriteMode mode, const unordered_set<int> &cols_need_to_read)
+      : table_(table), mode_(mode), cols_need_to_read_(cols_need_to_read)
+  {}
 
   virtual ~TableScanVecPhysicalOperator() = default;
 
@@ -49,4 +58,5 @@ private:
   Chunk                          filterd_columns_;
   vector<uint8_t>                select_;
   vector<unique_ptr<Expression>> predicates_;
+  unordered_set<int>             cols_need_to_read_;
 };

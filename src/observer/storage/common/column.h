@@ -77,6 +77,14 @@ public:
   RC append_value(const Value &val);
 
   /**
+   * 填充空列，值不会被访问，但是有大小
+   */
+  void resize_empty(int count) {
+    reset();
+    count_ = count;
+  }
+
+  /**
    * @brief 向 Column 追加写入数据
    * @param data 要被写入数据的起始地址
    * @param count 要写入数据的长度（这里指列值的个数，而不是字节）
