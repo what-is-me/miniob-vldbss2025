@@ -12,30 +12,100 @@ See the Mulan PSL v2 for more details. */
 #include "common/value.h"
 #include <cstdint>
 #include <stdint.h>
+#include <immintrin.h>
 
 #ifdef USE_SIMD
 #include "common/math/simd_util.h"
 #endif
+
+static inline __m256i mm256_loadu_si256(const void *addr) { return _mm256_loadu_si256((const __m256i_u *)addr); }
+
 template <typename T>
 void SumState<T>::update(const T *values, int size)
 {
-#ifdef USE_SIMD
-  if constexpr (is_same<T, float>::value) {
-    value += mm256_sum_ps(values, size);
-  } else if constexpr (is_same<T, int>::value) {
-    value += mm256_sum_epi32(values, size);
-  }
-#else
   for (int i = 0; i < size; ++i) {
     value += values[i];
   }
-#endif
 }
 
-template <typename T>
+template <>
+void SumState<int>::update(const int *values, int size)
+{
+  int align_size = size / 8 * 8;
+  if (align_size != 0) {
+    __m256i tmp = _mm256_set1_epi32(0);
+    for (int i = 0; i < align_size; i += 8) {
+      tmp = _mm256_add_epi32(tmp, mm256_loadu_si256(values + i));
+    }
+    for (int i = 0; i < 8; ++i) {
+      value += reinterpret_cast<int *>(&tmp)[i];
+    }
+  }
+  for (int i = align_size; i < size; ++i) {
+    value += values[i];
+  }
+}
+
+template <>
+void SumState<int64_t>::update(const int64_t *values, int size)
+{
+  int align_size = size / 4 * 4;
+  if (align_size != 0) {
+    __m256i tmp = _mm256_set1_epi64x(0);
+    for (int i = 0; i < align_size; i += 4) {
+      tmp = _mm256_add_epi64(tmp, mm256_loadu_si256(values + i));
+    }
+    for (int i = 0; i < 4; ++i) {
+      value += reinterpret_cast<int *>(&tmp)[i];
+    }
+  }
+  for (int i = align_size; i < size; ++i) {
+    value += values[i];
+  }
+}
+
+template <class T>
 void AvgState<T>::update(const T *values, int size)
 {
   for (int i = 0; i < size; ++i) {
+    value += values[i];
+  }
+  count += size;
+}
+
+template <>
+void AvgState<int>::update(const int *values, int size)
+{
+  int align_size = size / 8 * 8;
+  if (align_size != 0) {
+    __m256i tmp = _mm256_set1_epi32(0);
+    for (int i = 0; i < align_size; i += 8) {
+      tmp = _mm256_add_epi32(tmp, mm256_loadu_si256(values + i));
+    }
+    for (int i = 0; i < 8; ++i) {
+      value += reinterpret_cast<int *>(&tmp)[i];
+    }
+  }
+  for (int i = align_size; i < size; ++i) {
+    value += values[i];
+  }
+  count += size;
+}
+
+template <>
+void AvgState<int64_t>::update(const int64_t *values, int size)
+{
+  int align_size = size / 4 * 4;
+  if (align_size != 0) {
+    __m256i tmp = _mm256_set1_epi64x(0);
+    for (int i = 0; i < align_size; i += 4) {
+      tmp = _mm256_add_epi64(tmp, mm256_loadu_si256(values + i));
+    }
+    for (int i = 0; i < 4; ++i) {
+      value += reinterpret_cast<int *>(&tmp)[i];
+    }
+  }
+  for (int i = align_size; i < size; ++i) {
     value += values[i];
   }
   count += size;
