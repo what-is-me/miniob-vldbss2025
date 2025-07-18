@@ -237,6 +237,8 @@ public:
    */
   bool is_empty() const;
 
+  int capacity() const { return page_header_->record_capacity; }
+
 protected:
   /**
    * @details

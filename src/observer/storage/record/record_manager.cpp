@@ -541,32 +541,25 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
   Bitmap bitmap(bitmap_, page_header_->record_capacity);
   bitmap.set_bits(insert_rows);
   page_header_->record_num = insert_rows;
-  std::vector<std::future<RC>> async_results;
   for (int j = 0; j < chunk.column_num(); ++j) {
-    async_results.emplace_back(std::async([start_row, insert_rows, j, this, &chunk]() {
-      const int col_id = chunk.column_ids(j);
-      // 判断该列是否是TEXTS且列中存在vector buffer
-      if (chunk.column(j).attr_type() == AttrType::TEXTS && !chunk.column(j).is_vector_buffer_null()) {
-        for (int i = start_row; i < start_row + insert_rows; ++i) {
-          string_t *str = ((string_t *)chunk.column(j).data()) + i;
-          // 若不是内联字符串，设置偏移量
-          if (!str->is_inlined()) {
-            ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
-            
-            int64_t offset = 0;
-            GlobalLobFileHandler::get(col_id).insert_data(offset, str->size(), str->data());
-            str->set_offset(offset);
-          }
-          chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
+    const int col_id = chunk.column_ids(j);
+    // 判断该列是否是TEXTS且列中存在vector buffer
+    if (chunk.column(j).attr_type() == AttrType::TEXTS && !chunk.column(j).is_vector_buffer_null()) {
+      for (int i = start_row; i < start_row + insert_rows; ++i) {
+        string_t *str = ((string_t *)chunk.column(j).data()) + i;
+        // 若不是内联字符串，设置偏移量
+        if (!str->is_inlined()) {
+          ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
+
+          int64_t offset = 0;
+          GlobalLobFileHandler::get(0).insert_data(offset, str->size(), str->data());
+          str->set_offset(offset);
         }
-      } else {
-        chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
+        chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
       }
-      return RC::SUCCESS;
-    }));
-  }
-  for (auto &res : async_results) {
-    res.wait();
+    } else {
+      chunk.column(j).copy_to(get_field_data(0, col_id), start_row, insert_rows);
+    }
   }
   frame_->mark_dirty();
   return rc;
@@ -622,51 +615,43 @@ RC PaxRecordPageHandler::get_record(const RID &rid, Record &record)
 // TODO: specify the column_ids that chunk needed. currenly we get all columns
 RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
 {
-  chunk.reset_data();
-  Bitmap                       bitmap(bitmap_, page_header_->record_capacity);
-  bool                         fulfilled = page_header_->record_num == page_header_->record_capacity;
-  std::vector<std::future<RC>> async_results;
+  Bitmap bitmap(bitmap_, page_header_->record_capacity);
+  bool   fulfilled = page_header_->record_num == page_header_->record_capacity;
   for (int j = 0; j < chunk.column_num(); ++j) {
     const int col_id = chunk.column_ids(j);
-    if (col_id == -1) {
-      chunk.column(j).resize_empty(page_header_->record_num);
+    if (col_id == -1) [[likely]] {
+      if (chunk.column(j).attr_type() != AttrType::UNDEFINED) [[unlikely]] {
+        chunk.column(j).resize_empty(chunk.column(j).count() + page_header_->record_num);
+      } else {
+        chunk.column(j).resize(chunk.column(j).count() + page_header_->record_num);
+      }
       continue;
     }
-    async_results.emplace_back(std::async([j, fulfilled, col_id, this, &chunk, &bitmap]() {
-      RC      rc     = RC::SUCCESS;
-      Column &column = chunk.column(j);
-      if (!fulfilled || chunk.column(j).attr_type() == AttrType::TEXTS) {
-        for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
-          index = bitmap.next_setted_bit(index);
-          if (chunk.column(j).attr_type() == AttrType::TEXTS) {
-            string_t str = *(string_t *)get_field_data(index, j);
-            if (!str.is_inlined()) {
-              int64_t offset = str.get_offset();
-              str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
-              GlobalLobFileHandler::get(col_id).get_data(offset, str.size(), str.get_noinline_ptr());
-            }
-            rc = column.append_one((char *)&str);
-          } else {
-            rc = column.append_one(get_field_data(index, col_id));
+    Column &column = chunk.column(j);
+    if (!fulfilled || chunk.column(j).attr_type() == AttrType::TEXTS) {
+      RC rc = RC::SUCCESS;
+      for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
+        index = bitmap.next_setted_bit(index);
+        if (chunk.column(j).attr_type() == AttrType::TEXTS) {
+          string_t str = *(string_t *)get_field_data(index, j);
+          if (!str.is_inlined()) {
+            int64_t offset = str.get_offset();
+            str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
+            GlobalLobFileHandler::get(0).get_data(offset, str.size(), str.get_noinline_ptr());
           }
-          if (OB_FAIL(rc)) {
-            return rc;
-          }
+          rc = column.append_one((char *)&str);
+        } else {
+          rc = column.append_one(get_field_data(index, col_id));
         }
-      } else {
-        RC rc = column.append(get_field_data(0, col_id), page_header_->record_num);
         if (OB_FAIL(rc)) {
           return rc;
         }
       }
-      return RC::SUCCESS;
-    }));
-  }
-  for (auto &res : async_results) {
-    res.wait();
-    RC rc = res.get();
-    if (OB_FAIL(rc)) {
-      return rc;
+    } else {
+      RC rc = column.append(get_field_data(0, col_id), page_header_->record_num);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
     }
   }
   return RC::SUCCESS;
@@ -1004,7 +989,7 @@ RC ChunkFileScanner::open_scan_chunk(
 RC ChunkFileScanner::next_chunk(Chunk &chunk)
 {
   RC rc = RC::SUCCESS;
-
+  chunk.reset_data();
   while (bp_iterator_.has_next()) {
     PageNum page_num = bp_iterator_.next();
     record_page_handler_->cleanup();
@@ -1015,6 +1000,9 @@ RC ChunkFileScanner::next_chunk(Chunk &chunk)
     }
     rc = record_page_handler_->get_chunk(chunk);
     if (rc == RC::SUCCESS) {
+      if (chunk.rows() + std::max(100, record_page_handler_->capacity()) < Column::DEFAULT_CAPACITY) {
+        continue;
+      }
       return rc;
     } else if (rc == RC::RECORD_EOF) {
       break;
@@ -1025,5 +1013,8 @@ RC ChunkFileScanner::next_chunk(Chunk &chunk)
   }
 
   record_page_handler_->cleanup();
+  if (chunk.rows() > 0) {
+    return RC::SUCCESS;
+  }
   return RC::RECORD_EOF;
 }
