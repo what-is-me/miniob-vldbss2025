@@ -25,7 +25,7 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
-static const int MEM_POOL_ITEM_NUM = 20;
+static const int MEM_POOL_ITEM_NUM = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 
