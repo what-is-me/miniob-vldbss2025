@@ -12,6 +12,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/sstream.h"
 #include "common/log/log.h"
 #include "common/type/big_integer_type.h"
+#include "common/type/attr_type.h"
 #include "common/value.h"
 #include "storage/common/column.h"
 #include <cstdint>
@@ -19,13 +20,16 @@ See the Mulan PSL v2 for more details. */
 int BigIntegerType::compare(const Value &left, const Value &right) const
 {
   ASSERT(left.attr_type() == AttrType::BIGINTS, "left type is not biginteger");
-  ASSERT(right.attr_type() == AttrType::BIGINTS || right.attr_type() == AttrType::FLOATS, "right type is not numeric");
+  ASSERT(right.attr_type() == AttrType::BIGINTS || right.attr_type() == AttrType::FLOATS || right.attr_type() == AttrType::INTS, "right type is not numeric");
   if (right.attr_type() == AttrType::BIGINTS) {
-    return common::compare_int64((void *)&left.value_.int_value_, (void *)&right.value_.int_value_);
+    return common::compare_int64((void *)&left.value_.bigint_value_, (void *)&right.value_.bigint_value_);
   } else if (right.attr_type() == AttrType::FLOATS) {
     float left_val  = left.get_float();
     float right_val = right.get_float();
     return common::compare_float((void *)&left_val, (void *)&right_val);
+  } else if (right.attr_type() == AttrType::INTS) {
+    int64_t right_val = right.value_.int_value_;
+    return common::compare_int64((void *)&left.value_.bigint_value_, &right_val);
   }
   return INT32_MAX;
 }
@@ -34,26 +38,23 @@ int BigIntegerType::compare(const Column &left, const Column &right, int left_id
 {
   ASSERT(left.attr_type() == AttrType::BIGINTS, "left type is not integer");
   ASSERT(right.attr_type() == AttrType::BIGINTS, "right type is not integer");
-  return common::compare_int64((void *)&((int*)left.data())[left_idx],
-      (void *)&((int*)right.data())[right_idx]);
+  return common::compare_int64((void *)&((int *)left.data())[left_idx], (void *)&((int *)right.data())[right_idx]);
 }
 
 RC BigIntegerType::cast_to(const Value &val, AttrType type, Value &result) const
 {
   switch (type) {
-  case AttrType::FLOATS: {
-    float float_value = val.get_bigint();
-    result.set_float(float_value);
-    return RC::SUCCESS;
-  }
-  case AttrType::INTS: {
-    int int_value = val.get_bigint();
-    result.set_int(int_value);
-    return RC::SUCCESS;
-  }
-  default:
-    LOG_WARN("unsupported type %d", type);
-    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    case AttrType::FLOATS: {
+      float float_value = val.get_bigint();
+      result.set_float(float_value);
+      return RC::SUCCESS;
+    }
+    case AttrType::INTS: {
+      int int_value = val.get_bigint();
+      result.set_int(int_value);
+      return RC::SUCCESS;
+    }
+    default: LOG_WARN("unsupported type %d", type); return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
 }
 
@@ -83,7 +84,7 @@ RC BigIntegerType::negative(const Value &val, Value &result) const
 
 RC BigIntegerType::set_value_from_str(Value &val, const string &data) const
 {
-  RC                rc = RC::SUCCESS;
+  RC           rc = RC::SUCCESS;
   stringstream deserialize_stream;
   deserialize_stream.clear();  // 清理stream的状态，防止多次解析出现异常
   deserialize_stream.str(data);

@@ -114,12 +114,13 @@ public:
    * 获取对应的值
    * 如果当前的类型与期望获取的类型不符，就会执行转换操作
    */
-  int      get_int() const;
-  int64_t  get_bigint() const;
-  float    get_float() const;
-  string   get_string() const;
-  string_t get_string_t() const;
-  bool     get_boolean() const;
+  int              get_int() const;
+  int64_t          get_bigint() const;
+  float            get_float() const;
+  string           get_string() const;
+  string_t         get_string_t() const;
+  std::string_view get_string_view() const;
+  bool             get_boolean() const;
 
 public:
   void set_int(int val);

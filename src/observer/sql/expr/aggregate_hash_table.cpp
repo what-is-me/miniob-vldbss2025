@@ -10,8 +10,11 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/expr/aggregate_hash_table.h"
 #include "common/math/simd_util.h"
+#include "common/type/attr_type.h"
 #include "sql/expr/aggregate_state.h"
+#include <cstdint>
 #include <immintrin.h>
+#include <string_view>
 
 // ----------------------------------StandardAggregateHashTable------------------
 
@@ -97,11 +100,24 @@ RC StandardAggregateHashTable::Scanner::next(Chunk &output_chunk)
   return RC::SUCCESS;
 }
 
+static size_t hash_value(const Value &value)
+{
+  switch (value.attr_type()) {
+    case AttrType::DATES:
+    case AttrType::INTS: return hash<int>()(value.get_int());
+    case AttrType::BIGINTS: return hash<int64_t>()(*reinterpret_cast<int64_t *>(value.data()));
+    case AttrType::TEXTS:
+    case AttrType::CHARS: return hash<std::string_view>()(std::string_view(value.data(), value.length()));
+    default: return hash<string>()(value.to_string());
+  }
+}
+
 size_t StandardAggregateHashTable::VectorHash::operator()(const vector<Value> &vec) const
 {
   size_t hash_val = 0;
   for (const auto &elem : vec) {
-    hash_val ^= hash<string>()(elem.to_string());
+    hash_val ^= hash_value(elem);
+    hash_val *= static_cast<size_t>(1099511628211ULL); // copy from libstdc++
   }
   return hash_val;
 }
@@ -109,7 +125,7 @@ size_t StandardAggregateHashTable::VectorHash::operator()(const vector<Value> &v
 bool StandardAggregateHashTable::VectorEqual::operator()(const vector<Value> &lhs, const vector<Value> &rhs) const
 {
   if (lhs.size() != rhs.size()) {
-    return false;
+    [[unlikely]] return false;
   }
   for (size_t i = 0; i < lhs.size(); ++i) {
     if (rhs[i].compare(lhs[i]) != 0) {

@@ -35,8 +35,7 @@ Value::Value(bool val) { set_boolean(val); }
 
 Value::Value(const char *s, int len /*= 0*/) { set_string(s, len); }
 
-Value::Value(const string_t& s) { set_string(s.data(), s.size()); }
-
+Value::Value(const string_t &s) { set_string(s.data(), s.size()); }
 
 Value::Value(const Value &other)
 {
@@ -186,11 +185,10 @@ void Value::set_boolean(bool val)
 void Value::set_date(int date_numeric)
 {
   reset();
-  attr_type_         = AttrType::DATES;
+  attr_type_        = AttrType::DATES;
   value_.int_value_ = date_numeric;
-  length_            = 4;
+  length_           = 4;
 }
-
 
 void Value::set_string(const char *s, int len /*= 0*/)
 {
@@ -213,7 +211,8 @@ void Value::set_string(const char *s, int len /*= 0*/)
   }
 }
 
-void Value::set_text(const char *s, int len) {
+void Value::set_text(const char *s, int len)
+{
   reset();
   attr_type_ = AttrType::TEXTS;
   if (s == nullptr) {
@@ -238,12 +237,11 @@ void Value::set_empty_string(int len)
   reset();
   attr_type_ = AttrType::CHARS;
 
-  own_data_ = true;
+  own_data_             = true;
   value_.pointer_value_ = new char[len + 1];
   length_               = len;
   memset(value_.pointer_value_, 0, len);
   value_.pointer_value_[len] = '\0';
-  
 }
 
 void Value::set_value(const Value &value)
@@ -285,7 +283,7 @@ char *Value::data() const
 {
   switch (attr_type_) {
     case AttrType::CHARS:
-    case AttrType::TEXTS:  {
+    case AttrType::TEXTS: {
       return value_.pointer_value_;
     } break;
     default: {
@@ -305,7 +303,10 @@ string Value::to_string() const
   return res;
 }
 
-int Value::compare(const Value &other) const { return DataType::type_instance(this->attr_type_)->compare(*this, other); }
+int Value::compare(const Value &other) const
+{
+  return DataType::type_instance(this->attr_type_)->compare(*this, other);
+}
 
 int Value::get_int() const
 {
@@ -401,6 +402,12 @@ float Value::get_float() const
 }
 
 string Value::get_string() const { return this->to_string(); }
+
+std::string_view Value::get_string_view() const
+{
+  ASSERT(attr_type_ == AttrType::CHARS || attr_type_ == AttrType::TEXTS, "attr type is not CHARS");
+  return std::string_view(value_.pointer_value_, length_);
+}
 
 string_t Value::get_string_t() const
 {
