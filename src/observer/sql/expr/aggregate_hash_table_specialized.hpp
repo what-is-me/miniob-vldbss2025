@@ -87,8 +87,8 @@ public:
     }
 
   private:
-    Int64KeyHashTable::iterator end_;
-    Int64KeyHashTable::iterator it_;
+    typename Int64KeyHashTable::iterator end_;
+    typename Int64KeyHashTable::iterator it_;
   };
   Int64KeyAggregateHashTable(const vector<Expression *> aggregations)
   {
@@ -126,8 +126,8 @@ public:
     return RC::SUCCESS;
   }
 
-  Int64KeyHashTable::iterator begin() { return aggr_values_.begin(); }
-  Int64KeyHashTable::iterator end() { return aggr_values_.end(); }
+  typename Int64KeyHashTable::iterator begin() { return aggr_values_.begin(); }
+  typename Int64KeyHashTable::iterator end() { return aggr_values_.end(); }
   Int64KeyHashTable           aggr_values_;
 };
 template class Int64KeyAggregateHashTable<2, 3>;
