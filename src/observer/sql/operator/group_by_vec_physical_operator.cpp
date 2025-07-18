@@ -12,8 +12,10 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "common/sys/rc.h"
 #include "common/type/attr_type.h"
+#include "sql/expr/aggregate_hash_table_specialized.hpp"
 #include "sql/expr/expression.h"
 #include "storage/common/column.h"
+#include <algorithm>
 #include <memory>
 GroupByVecPhysicalOperator::GroupByVecPhysicalOperator(
     vector<unique_ptr<Expression>> &&group_by_exprs, vector<Expression *> &&expressions)
@@ -60,8 +62,35 @@ GroupByVecPhysicalOperator::GroupByVecPhysicalOperator(
     }
   }
 #else
-  hash_table_         = std::make_unique<StandardAggregateHashTable>(aggregate_expressions_);
-  hash_table_scanner_ = std::make_unique<StandardAggregateHashTable::Scanner>(hash_table_.get());
+  if (std::all_of(group_by_exprs_.begin(), group_by_exprs_.end(), [](const unique_ptr<Expression> &expr) {
+        return expr->value_type() == AttrType::INTS;
+      })) {
+    if (group_by_exprs_.size() == 1 && aggregate_expressions_.size() == 1) {
+      hash_table_         = std::make_unique<Int64KeyAggregateHashTable<1, 1>>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<Int64KeyAggregateHashTable<1, 1>::Scanner>(hash_table_.get());
+    } else if (group_by_exprs_.size() == 1 && aggregate_expressions_.size() == 2) {
+      hash_table_         = std::make_unique<Int64KeyAggregateHashTable<1, 2>>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<Int64KeyAggregateHashTable<1, 2>::Scanner>(hash_table_.get());
+    } else if (group_by_exprs_.size() == 1 && aggregate_expressions_.size() == 3) {
+      hash_table_         = std::make_unique<Int64KeyAggregateHashTable<1, 3>>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<Int64KeyAggregateHashTable<1, 3>::Scanner>(hash_table_.get());
+    } else if (group_by_exprs_.size() == 2 && aggregate_expressions_.size() == 1) {
+      hash_table_         = std::make_unique<Int64KeyAggregateHashTable<2, 1>>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<Int64KeyAggregateHashTable<2, 1>::Scanner>(hash_table_.get());
+    } else if (group_by_exprs_.size() == 2 && aggregate_expressions_.size() == 2) {
+      hash_table_         = std::make_unique<Int64KeyAggregateHashTable<2, 2>>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<Int64KeyAggregateHashTable<2, 2>::Scanner>(hash_table_.get());
+    } else if (group_by_exprs_.size() == 2 && aggregate_expressions_.size() == 3) {
+      hash_table_         = std::make_unique<Int64KeyAggregateHashTable<2, 3>>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<Int64KeyAggregateHashTable<2, 3>::Scanner>(hash_table_.get());
+    } else {
+      hash_table_         = std::make_unique<StandardAggregateHashTable>(aggregate_expressions_);
+      hash_table_scanner_ = std::make_unique<StandardAggregateHashTable::Scanner>(hash_table_.get());
+    }
+  } else {
+    hash_table_         = std::make_unique<StandardAggregateHashTable>(aggregate_expressions_);
+    hash_table_scanner_ = std::make_unique<StandardAggregateHashTable::Scanner>(hash_table_.get());
+  }
   for (int i = 0; i < group_by_exprs_.size(); ++i) {
     output_chunk_.add_column(
         std::make_unique<Column>(group_by_exprs_[i]->value_type(), group_by_exprs_[i]->value_length()), i);
