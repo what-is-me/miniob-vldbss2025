@@ -24,7 +24,7 @@ int TextType::compare(const Value &left, const Value &right) const
 
 RC TextType::set_value_from_str(Value &val, const string &data) const
 {
-  val.set_text(data.c_str());
+  val.set_text(data.c_str(), data.size());
   return RC::SUCCESS;
 }
 

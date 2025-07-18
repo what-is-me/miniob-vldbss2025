@@ -46,7 +46,9 @@ Value::Value(const Value &other)
     case AttrType::CHARS: {
       set_string_from_other(other);
     } break;
-
+    case AttrType::TEXTS: {
+      set_string_from_other(other);
+    } break;
     default: {
       this->value_ = other.value_;
     } break;
@@ -76,7 +78,9 @@ Value &Value::operator=(const Value &other)
     case AttrType::CHARS: {
       set_string_from_other(other);
     } break;
-
+    case AttrType::TEXTS: {
+      set_string_from_other(other);
+    } break;
     default: {
       this->value_ = other.value_;
     } break;
@@ -221,11 +225,11 @@ void Value::set_text(const char *s, int len)
     length_               = 0;
   } else {
     own_data_ = true;
-    if (len > 0) {
-      len = strnlen(s, len);
-    } else {
-      len = strlen(s);
-    }
+    // if (len > 0) {
+    //   len = strnlen(s, len);
+    // } else {
+    //   len = strlen(s);
+    // }
     value_.pointer_value_ = new char[len + 1];
     length_               = len;
     memcpy(value_.pointer_value_, s, len);
@@ -272,7 +276,7 @@ void Value::set_value(const Value &value)
 
 void Value::set_string_from_other(const Value &other)
 {
-  ASSERT(attr_type_ == AttrType::CHARS, "attr type is not CHARS");
+  ASSERT(attr_type_ == AttrType::CHARS || attr_type_ == AttrType::TEXTS, "attr type is not CHARS");
   if (own_data_ && other.value_.pointer_value_ != nullptr) {
     this->value_.pointer_value_ = new char[this->length_ + 1];
     memcpy(this->value_.pointer_value_, other.value_.pointer_value_, this->length_);

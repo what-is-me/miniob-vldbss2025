@@ -177,7 +177,9 @@ Value Column::get_value(int index) const
   if (attr_type_ == AttrType::TEXTS) {
     string_t str;
     memcpy((char *)&str, &data_[index * attr_len_], attr_len_);
-    return Value(AttrType::TEXTS, str.get_data_writeable(), str.size());
+    Value value;
+    value.set_text(str.data(), str.size());
+    return value;
   }
   return Value(attr_type_, &data_[index * attr_len_], attr_len_);
 }
