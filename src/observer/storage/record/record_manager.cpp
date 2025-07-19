@@ -22,10 +22,14 @@ See the Mulan PSL v2 for more details. */
 #include "storage/record/lob_handler.h"
 #include "storage/trx/trx.h"
 #include "storage/clog/log_handler.h"
-#include <cstdint>
-#include <cstdlib>
+#include <array>
 #include <cstring>
+#include <filesystem>
+#include <future>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace common;
@@ -477,34 +481,49 @@ RC PaxRecordPageHandler::insert_record(const char *data, RID *rid)
 
 class GlobalLobFileHandler
 {
-  class LobHandler
+  struct alignas(64) WarpedLobFileHandler
   {
-  public:
-    LobHandler(int64_t size_mb = 500)
-    {
-      data_holder_ = (char *)malloc(size_mb * 1024 * 1024);
-      offset_      = 0;
-    }
-    ~LobHandler() { free(data_holder_); }
-    char *insert_data(int64_t size, const char *data)
-    {
-      char *ret = data_holder_ + offset_;
-      offset_ += size + 1;
-      memcpy(ret, data, size);
-      return ret;
-    }
-
-  private:
-    char   *data_holder_;
-    int64_t offset_;
+    bool           opened{false};
+    LobFileHandler lob_file_handler{};
   };
 
 public:
-  static LobHandler &get()
+  GlobalLobFileHandler() {}
+  virtual ~GlobalLobFileHandler()
   {
-    static LobHandler handler;
-    return handler;
+    for (auto &slot : handlers_) {
+      if (slot.opened) {
+        slot.lob_file_handler.close_file();
+      }
+    }
   }
+  static LobFileHandler &get(size_t col_id)
+  {
+    static GlobalLobFileHandler lb;
+    auto                       &slot = lb.handlers_.at(col_id);
+    if (!slot.opened) {
+      std::lock_guard<std::mutex> lg(lb.mu_);
+      const std::string           lob_dir = "lobs";
+      if (!std::filesystem::exists(lob_dir)) {
+        std::filesystem::create_directory(lob_dir);
+      }
+      const std::string file_name = lob_dir + "/" + std::to_string(col_id) + ".lob";
+      if (slot.lob_file_handler.open_file(file_name.c_str()) == RC::FILE_NOT_EXIST) {
+        auto res = slot.lob_file_handler.create_file(file_name.c_str());
+        if (res != RC::SUCCESS) {
+          LOG_ERROR("Failed to create lob file.");
+          throw std::runtime_error("Failed to create lob file.");
+        }
+      }
+      slot.opened = true;
+    }
+    return slot.lob_file_handler;
+  }
+
+private:
+  inline static constexpr size_t                   MAX_COLUMN_CNT = 128;  // clickbench has 105 cols
+  std::array<WarpedLobFileHandler, MAX_COLUMN_CNT> handlers_{};
+  std::mutex                                       mu_;
 };
 
 RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &insert_rows)
@@ -531,7 +550,10 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
         // 若不是内联字符串，设置偏移量
         if (!str->is_inlined()) {
           ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
-          str->set_noinline_ptr(GlobalLobFileHandler::get().insert_data(str->size(), str->data()));
+
+          int64_t offset = 0;
+          GlobalLobFileHandler::get(0).insert_data(offset, str->size(), str->data());
+          str->set_offset(offset);
         }
         chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
       }
@@ -594,7 +616,7 @@ RC PaxRecordPageHandler::get_record(const RID &rid, Record &record)
 RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
 {
   Bitmap bitmap(bitmap_, page_header_->record_capacity);
-  // bool   fulfilled = page_header_->record_num == page_header_->record_capacity;
+  bool   fulfilled = page_header_->record_num == page_header_->record_capacity;
   for (int j = 0; j < chunk.column_num(); ++j) {
     const int col_id = chunk.column_ids(j);
     if (col_id == -1) [[likely]] {
@@ -606,22 +628,31 @@ RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
       continue;
     }
     Column &column = chunk.column(j);
-    // if (!fulfilled) {
-    //   RC rc = RC::SUCCESS;
-    //   for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
-    //     index = bitmap.next_setted_bit(index);
-    //     rc    = column.append_one(get_field_data(index, col_id));
-    //     if (OB_FAIL(rc)) {
-    //       return rc;
-    //     }
-    //   }
-    // } else {
-    // NO deletion
-    RC rc = column.append(get_field_data(0, col_id), page_header_->record_num);
-    if (OB_FAIL(rc)) {
-      return rc;
+    if (!fulfilled || chunk.column(j).attr_type() == AttrType::TEXTS) {
+      RC rc = RC::SUCCESS;
+      for (int i = 0, index = 0; i < page_header_->record_num; ++i, ++index) {
+        index = bitmap.next_setted_bit(index);
+        if (chunk.column(j).attr_type() == AttrType::TEXTS) {
+          string_t str = *(string_t *)get_field_data(index, j);
+          if (!str.is_inlined()) {
+            int64_t offset = str.get_offset();
+            str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
+            GlobalLobFileHandler::get(0).get_data(offset, str.size(), str.get_noinline_ptr());
+          }
+          rc = column.append_one((char *)&str);
+        } else {
+          rc = column.append_one(get_field_data(index, col_id));
+        }
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+      }
+    } else {
+      RC rc = column.append(get_field_data(0, col_id), page_header_->record_num);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
     }
-    // }
   }
   return RC::SUCCESS;
 }
