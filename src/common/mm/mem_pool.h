@@ -29,7 +29,7 @@ See the Mulan PSL v2 for more details. */
 
 namespace common {
 
-#define DEFAULT_ITEM_NUM_PER_POOL 128
+#define DEFAULT_ITEM_NUM_PER_POOL 16
 #define DEFAULT_POOL_NUM 1
 
 typedef bool (*match)(void *item, void *input_arg);
