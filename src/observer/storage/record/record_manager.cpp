@@ -481,49 +481,52 @@ RC PaxRecordPageHandler::insert_record(const char *data, RID *rid)
 
 class GlobalLobFileHandler
 {
-  struct alignas(64) WarpedLobFileHandler
+  class CachedLobFileHandler
   {
-    bool           opened{false};
-    LobFileHandler lob_file_handler{};
+  public:
+    CachedLobFileHandler() : filename_("text_output")
+    {
+      std::ifstream t(filename_, std::ios::binary);
+      buffer_ = std::string((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+      buffer_.reserve(500 * 1024 * 1024);
+      persisted_size_ = buffer_.size();
+    }
+    ~CachedLobFileHandler() { sync(); }
+
+    RC insert_data(int64_t &offset, int64_t length, const char *data)
+    {
+      offset = buffer_.size();
+      buffer_.append(data, length);
+      return RC::SUCCESS;
+    }
+
+    RC get_data(int64_t offset, int64_t length, char *data)
+    {
+      memcpy(data, buffer_.data() + offset, length);
+      return RC::SUCCESS;
+    }
+
+    void sync()
+    {
+      if (buffer_.size() > persisted_size_) {
+        std::ofstream outfile(filename_, std::ios::binary | std::ios::app);
+        outfile.write(buffer_.data() + persisted_size_, buffer_.size() - persisted_size_);
+        persisted_size_ = buffer_.size();
+      }
+    }
+
+  private:
+    uint64_t    persisted_size_;
+    std::string filename_;
+    std::string buffer_;
   };
 
 public:
-  GlobalLobFileHandler() {}
-  virtual ~GlobalLobFileHandler()
+  static CachedLobFileHandler &get()
   {
-    for (auto &slot : handlers_) {
-      if (slot.opened) {
-        slot.lob_file_handler.close_file();
-      }
-    }
+    static CachedLobFileHandler lb;
+    return lb;
   }
-  static LobFileHandler &get(size_t col_id)
-  {
-    static GlobalLobFileHandler lb;
-    auto                       &slot = lb.handlers_.at(col_id);
-    if (!slot.opened) {
-      std::lock_guard<std::mutex> lg(lb.mu_);
-      const std::string           lob_dir = "lobs";
-      if (!std::filesystem::exists(lob_dir)) {
-        std::filesystem::create_directory(lob_dir);
-      }
-      const std::string file_name = lob_dir + "/" + std::to_string(col_id) + ".lob";
-      if (slot.lob_file_handler.open_file(file_name.c_str()) == RC::FILE_NOT_EXIST) {
-        auto res = slot.lob_file_handler.create_file(file_name.c_str());
-        if (res != RC::SUCCESS) {
-          LOG_ERROR("Failed to create lob file.");
-          throw std::runtime_error("Failed to create lob file.");
-        }
-      }
-      slot.opened = true;
-    }
-    return slot.lob_file_handler;
-  }
-
-private:
-  inline static constexpr size_t                   MAX_COLUMN_CNT = 128;  // clickbench has 105 cols
-  std::array<WarpedLobFileHandler, MAX_COLUMN_CNT> handlers_{};
-  std::mutex                                       mu_;
 };
 
 RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &insert_rows)
@@ -552,7 +555,7 @@ RC PaxRecordPageHandler::insert_chunk(const Chunk &chunk, int start_row, int &in
           ASSERT(str->is_inlined() == false, "TEXTS column should not be inlined");
 
           int64_t offset = 0;
-          GlobalLobFileHandler::get(0).insert_data(offset, str->size(), str->data());
+          GlobalLobFileHandler::get().insert_data(offset, str->size(), str->data());
           str->set_offset(offset);
         }
         chunk.column(j).copy_to(get_field_data(i - start_row, col_id), i, 1);
@@ -637,7 +640,7 @@ RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
           if (!str.is_inlined()) {
             int64_t offset = str.get_offset();
             str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
-            GlobalLobFileHandler::get(0).get_data(offset, str.size(), str.get_noinline_ptr());
+            GlobalLobFileHandler::get().get_data(offset, str.size(), str.get_noinline_ptr());
           }
           rc = column.append_one((char *)&str);
         } else {
@@ -846,7 +849,7 @@ RC RecordFileHandler::insert_chunk(const Chunk &chunk, int record_size)
     }
     start_row += insert_rows;
   }
-
+  GlobalLobFileHandler::get().sync();
   return RC::SUCCESS;
 }
 
