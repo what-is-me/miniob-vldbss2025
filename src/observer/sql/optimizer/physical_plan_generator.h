@@ -62,6 +62,9 @@ private:
   RC create_vec_plan(ExplainLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(OrderByLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
   RC create_vec_plan(LimitLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session *session);
+  RC create_vec_plan_group_by_order_by_count_limit(LimitLogicalOperator *logical_oper,
+      GroupByLogicalOperator *group_by_oper, ProjectLogicalOperator *project_oper, unique_ptr<PhysicalOperator> &oper,
+      Session *session);
 
   // TODO: remove this and add CBO rules
   bool can_use_hash_join(JoinLogicalOperator &logical_oper);

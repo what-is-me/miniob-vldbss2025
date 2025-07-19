@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/explain_logical_operator.h"
 #include "sql/operator/explain_physical_operator.h"
 #include "sql/operator/expr_vec_physical_operator.h"
+#include "sql/operator/group_by_order_by_count_desc_limit_physical_operator.h"
 #include "sql/operator/group_by_vec_physical_operator.h"
 #include "sql/operator/hash_join_physical_operator.h"
 #include "sql/operator/index_scan_physical_operator.h"
@@ -522,6 +523,18 @@ RC PhysicalPlanGenerator::create_vec_plan(
     // rewrite
     OrderByLogicalOperator *order_logical_oper =
         static_cast<OrderByLogicalOperator *>(logical_oper.children().front().get());
+    if (order_logical_oper->order_by_exprs().size() == 1 &&
+        order_logical_oper->order_by_exprs().front()->type() == ExprType::AGGREGATION &&
+        static_cast<AggregateExpr *>(order_logical_oper->order_by_exprs().front().get())->aggregate_type() ==
+            AggregateExpr::Type::COUNT &&
+        !order_logical_oper->asc().front() &&
+        order_logical_oper->children().front()->children().front()->type() == LogicalOperatorType::GROUP_BY) {
+      ProjectLogicalOperator *project_oper =
+          static_cast<ProjectLogicalOperator *>(order_logical_oper->children().front().get());
+      GroupByLogicalOperator *group_by_oper =
+          static_cast<GroupByLogicalOperator *>(project_oper->children().front().get());
+      return create_vec_plan_group_by_order_by_count_limit(&logical_oper, group_by_oper, project_oper, oper, session);
+    }
     unique_ptr<PhysicalOperator> physical_oper = make_unique<OrderByLimitVecPhysicalOperator>(
         std::move(order_logical_oper->order_by_exprs()), std::move(order_logical_oper->asc()), logical_oper.n());
     ASSERT(order_logical_oper->children().size() == 1, "oredr by operator should have 1 child");
@@ -547,4 +560,43 @@ RC PhysicalPlanGenerator::create_vec_plan(
   physical_oper->add_child(std::move(child_physical_oper));
   oper = std::move(physical_oper);
   return RC::SUCCESS;
+}
+
+RC PhysicalPlanGenerator::create_vec_plan_group_by_order_by_count_limit(LimitLogicalOperator *limit_oper,
+    GroupByLogicalOperator *group_by_oper, ProjectLogicalOperator *project_oper, unique_ptr<PhysicalOperator> &oper,
+    Session *session)
+{
+  unique_ptr<PhysicalOperator> child_physical_oper = nullptr;
+  {  // build group by order by count desc oper
+    if (group_by_oper->group_by_expressions().empty()) {
+      return RC::INVALID_ARGUMENT;
+    } else {
+      child_physical_oper =
+          make_unique<GroupByOrderByCountDescVecPhysicalOperator>(std::move(group_by_oper->group_by_expressions()),
+              std::move(group_by_oper->aggregate_expressions()),
+              limit_oper->n());
+    }
+
+    ASSERT(group_by_oper->children().size() == 1, "group by operator should have 1 child");
+    LogicalOperator             &child_oper = *group_by_oper->children().front();
+    unique_ptr<PhysicalOperator> child_physical_oper_of_group_by;
+    RC                           rc = create_vec(child_oper, child_physical_oper_of_group_by, session);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to create child physical operator of group by(vec) operator. rc=%s", strrc(rc));
+      return rc;
+    }
+    child_physical_oper->add_child(std::move(child_physical_oper_of_group_by));
+  }
+  {  // build project
+    auto project_operator = make_unique<ProjectVecPhysicalOperator>(std::move(project_oper->expressions()));
+    vector<Expression *> expressions;
+    for (auto &expr : project_operator->expressions()) {
+      expressions.push_back(expr.get());
+    }
+    auto expr_operator = make_unique<ExprVecPhysicalOperator>(std::move(expressions));
+    expr_operator->add_child(std::move(child_physical_oper));
+    project_operator->add_child(std::move(expr_operator));
+    oper = std::move(project_operator);
+    return RC::SUCCESS;
+  }
 }

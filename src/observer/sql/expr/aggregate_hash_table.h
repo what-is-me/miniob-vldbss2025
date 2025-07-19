@@ -51,6 +51,12 @@ public:
   vector<AttrType>            aggr_child_types_;
 };
 
+class ClickAggregateHashTableInretface : public AggregateHashTable
+{
+public:
+  virtual RC next(Chunk &out_put_chunk, int count_pos, int n) = 0;
+};
+
 class StandardAggregateHashTable : public AggregateHashTable
 {
 private:

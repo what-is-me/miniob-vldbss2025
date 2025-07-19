@@ -87,9 +87,7 @@ public:
     resize(count);
   }
 
-  void resize(int count) {
-    count_ = count;
-  }
+  void resize(int count) { count_ = count; }
 
   /**
    * @brief 向 Column 追加写入数据
@@ -122,6 +120,16 @@ public:
   int data_len() const { return count_ * attr_len_; }
 
   char *data() const { return data_; }
+
+  template <typename T>
+  T *data_at(int idx)
+  {
+    if (column_type_ == Type::CONSTANT_COLUMN) {
+      return reinterpret_cast<T *>(data_);
+    } else {
+      return reinterpret_cast<T *>(data_ + attr_len_ * idx);
+    }
+  }
 
   string_t add_text(const char *str, int len);
 
