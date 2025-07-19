@@ -55,11 +55,7 @@ public:
 private:
   size_t hash_func(const int &value) const { return static_cast<size_t>(value); }
   size_t hash_func(const int64_t &value) const { return static_cast<size_t>(value); }
-  size_t hash_func(const std::string &value) const
-  {
-    return std::hash<std::string_view>()(
-        std::string_view(value.data(), std::min(value.size(), static_cast<size_t>(16))));
-  }
+  size_t hash_func(const std::string &value) const { return std::hash<std::string>()(value); }
 };
 
 template <size_t NAggr /*1,3*/, typename... KeyTypes>
