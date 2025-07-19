@@ -506,6 +506,8 @@ class GlobalLobFileHandler
       return RC::SUCCESS;
     }
 
+    char *get_data(int64_t offset) { return buffer_.data() + offset; }
+
     void sync()
     {
       if (buffer_.size() > persisted_size_) {
@@ -639,8 +641,7 @@ RC PaxRecordPageHandler::get_chunk(Chunk &chunk)
           string_t str = *(string_t *)get_field_data(index, j);
           if (!str.is_inlined()) {
             int64_t offset = str.get_offset();
-            str            = chunk.column(j).get_vector_buffer()->empty_string(str.size());
-            GlobalLobFileHandler::get().get_data(offset, str.size(), str.get_noinline_ptr());
+            str.set_noinline_ptr(GlobalLobFileHandler::get().get_data(offset));
           }
           rc = column.append_one((char *)&str);
         } else {
