@@ -248,7 +248,7 @@ void LoadDataExecutor::load_data(Table *table, const char *file_name, char termi
   }
 
   fs.close();
-
+  table->sync();
   struct timespec end_time;
   clock_gettime(CLOCK_MONOTONIC, &end_time);
   if (RC::SUCCESS == rc) {
